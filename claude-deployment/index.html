@@ -386,6 +386,15 @@ footer{padding:64px 0 40px;border-top:1px solid var(--hair)}
   .big-cta{padding:52px 24px}.foot-links{flex-direction:column;gap:24px}
   .float-chip{display:none}.award{width:260px}
 }
+/* phones: keep the hero inside the screen */
+@media (max-width:900px){.hero-grid{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:600px){
+  nav.top .row{padding:12px 20px 12px 30px;gap:12px}
+  nav.top .btn{padding:10px 14px;font-size:13px}
+  .mock-body{grid-template-columns:1fr;padding:18px}
+  .write1{font-size:30px}
+}
+@media (max-width:360px){nav.top .row{padding-right:14px}nav.top .btn{font-size:12px;padding:9px 12px}nav.top .btn i{display:none}}
 </style>
 </head>
 <body>

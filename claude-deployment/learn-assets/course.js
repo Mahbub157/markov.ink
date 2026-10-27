@@ -187,16 +187,16 @@
       ? esc(crs.teacher) + (crs.section ? ' · ' + esc(crs.section) : '') + (profile.school.demo ? ' <span class="badge-demo">Fictional demo</span>' : '')
       : 'Your course';
 
-    var html = '<header class="ch-head" data-area="' + esc(crs.area) + '">' +
+    var left = '<header class="ch-head" data-area="' + esc(crs.area) + '">' +
       '<div class="ch-id"><span class="course-mark">' + U.glyph(crs.glyph) + '</span>' +
       '<div><h1 class="ch-title">' + esc(crs.title) + '</h1><div class="ch-who">' + who + '</div></div></div>' +
       rewardsHtml() + '</header>' +
 
       '<h2 class="ask" id="ask">What do you want to do?</h2>' +
-      '<nav class="choices3" aria-labelledby="ask">' +
-      '<a class="choice3 hw" href="' + h('/homework') + '" data-intent="homework"><span class="c3-icon">' + ART.hw + '</span>Work on homework</a>' +
-      '<a class="choice3 un" href="' + h('/topics') + '" data-intent="understand"><span class="c3-icon">' + ART.un + '</span>Understand a topic</a>' +
-      '<a class="choice3 te" href="' + h('/test') + '" data-intent="test"><span class="c3-icon">' + ART.te + '</span>Prepare for a test</a>' +
+      '<nav class="cta-row" aria-labelledby="ask">' +
+      '<a class="cta" href="' + h('/homework') + '" data-intent="homework">' + ART.hw + 'Work on homework</a>' +
+      '<a class="cta" href="' + h('/topics') + '" data-intent="understand">' + ART.un + 'Understand a topic</a>' +
+      '<a class="cta" href="' + h('/test') + '" data-intent="test">' + ART.te + 'Prepare for a test</a>' +
       '</nav>' +
 
       '<section class="nextrow" aria-labelledby="next-main">' +
@@ -206,7 +206,6 @@
       (next.sub ? '<span class="next-sub">' + esc(next.sub) + '</span>' : '') + '</div>' +
       '<a class="btn btn-primary" href="' + next.href + '">' + esc(next.go) + U.icon('right') + '</a></section>';
 
-    // What is coming up, only when something real is there.
     var upcoming = [];
     asg.forEach(function (a) {
       var act = L.activity(courseId, 'asg:' + a.id);
@@ -216,36 +215,76 @@
       var d = daysUntil(p.date);
       upcoming.push('<a class="soon" href="' + h('/test/' + p.id) + '">' + ART.te + '<span class="grow">' + esc(p.name) + '</span><small>' + (p.date ? esc(fmtDate(p.date)) + (d != null && d >= 0 ? ' · in ' + d + ' day' + (d === 1 ? '' : 's') : '') : 'No date') + '</small></a>');
     });
-    if (upcoming.length) html += '<h2 class="sub-h">Coming up</h2><div class="soon-list">' + upcoming.join('') + '</div>';
+    if (upcoming.length) left += '<h2 class="sub-h">Coming up</h2><div class="soon-list">' + upcoming.join('') + '</div>';
 
-    // The course map: the current unit as a trail, other units as one line each.
-    if (outline) {
-      var ev = evidenceSummary();
-      var cu = currentUnit();
-      var hereId = inMotion && inMotion.topicId ? inMotion.topicId : (sugg ? sugg.topic.id : null);
-      html += '<div class="map-head"><h2 class="sub-h" style="margin:0">Course map</h2>' +
-        '<a class="map-progress" href="' + h('/progress') + '">' + ev.practiced + ' of ' + ev.total + ' topics practiced' + U.icon('right') + '</a></div>' +
-        '<div class="map">' + outline.units.map(function (u) {
-          var states = u.topics.map(function (t) { return L.topicEvidence(courseId, t.id).state; });
-          var done = states.filter(function (s) { return s !== 'none' && s !== 'progress'; }).length;
-          if (u.id !== cu.id) {
-            return '<a class="map-unit" href="' + h('/topics') + '"><span class="unit-n">' + u.n + '</span><span class="grow">' + esc(u.title) + '</span>' +
-              '<span class="mini-dots" aria-hidden="true">' + states.map(dot).join('') + '</span><small>' + done + '/' + u.topics.length + '</small></a>';
-          }
-          return '<div class="map-current"><div class="map-unit is-current"><span class="unit-n">' + u.n + '</span><span class="grow">' + esc(u.title) + '</span><small>' + done + '/' + u.topics.length + '</small></div>' +
-            '<ol class="trail">' + u.topics.map(function (t, i) {
-              var here = t.id === hereId;
-              return '<li class="trail-step' + (here ? ' here' : '') + '"><a href="' + h('/topic/' + t.id) + '"' + (here ? ' aria-current="step"' : '') + '>' + dot(states[i]) +
-                '<span class="trail-name">' + esc(t.title) + '</span>' + (here ? '<span class="trail-here">You are here</span>' : '') + '</a></li>';
-            }).join('') + '</ol></div>';
-        }).join('') + '</div>' +
-        '<p class="map-note">' + esc(outline.outlineLabel) + '. ' + esc(outline.sequenceLabel) + '.</p>';
-    }
+    var hereId = inMotion && inMotion.topicId ? inMotion.topicId : (sugg ? sugg.topic.id : null);
+    var right = outline ? courseMapHtml(hereId) : '';
 
-    mount(html);
+    mount('<div class="home2' + (outline ? '' : ' no-map') + '"><div class="home2-main">' + left + '</div>' + right + '</div>');
     view.querySelectorAll('[data-intent]').forEach(function (a) {
       a.addEventListener('click', function () { L.setIntent(courseId, a.getAttribute('data-intent')); });
     });
+    if (outline) bindCourseMap(hereId);
+  }
+
+  /* ---------- Course map: a clickable path with progress rings ---------- */
+
+  var RING = { none: 0, progress: 0.25, helped: 0.6, review: 0.6, independent: 1 };
+  var XS = [36, 92, 136, 92]; // winding path positions, repeated per unit
+  var ROW = 82;
+
+  function nodeSvg(state) {
+    var r = 22, circ = 2 * Math.PI * r, f = RING[state] || 0;
+    var col = state === 'independent' ? '#0E7C6B' : state === 'review' ? '#D97706' : '#0284C7';
+    return '<svg class="node-ring" viewBox="0 0 52 52" aria-hidden="true">' +
+      '<circle cx="26" cy="26" r="' + r + '" fill="none" stroke="#DDE7F2" stroke-width="5"/>' +
+      (f ? '<circle cx="26" cy="26" r="' + r + '" fill="none" stroke="' + col + '" stroke-width="5" stroke-linecap="round" stroke-dasharray="' + (circ * f).toFixed(1) + ' ' + circ.toFixed(1) + '" transform="rotate(-90 26 26)"/>' : '') +
+      '</svg>';
+  }
+
+  function courseMapHtml(hereId) {
+    var ev = evidenceSummary();
+    var html = '<aside class="cmap" aria-labelledby="cmap-title">' +
+      '<div class="cmap-head"><h2 id="cmap-title">Course map</h2><a href="' + h('/progress') + '">' + ev.practiced + ' of ' + ev.total + ' practiced</a></div>' +
+      '<div class="cmap-bar" aria-hidden="true">' + ev.states.map(function (s) { return '<i class="' + s + '"></i>'; }).join('') + '</div>' +
+      '<div class="cmap-detail" id="cmap-detail" aria-live="polite"></div>';
+    outline.units.forEach(function (u) {
+      var states = u.topics.map(function (t) { return L.topicEvidence(courseId, t.id).state; });
+      var done = states.filter(function (s) { return s !== 'none' && s !== 'progress'; }).length;
+      var height = u.topics.length * ROW;
+      var pts = u.topics.map(function (t, i) { return XS[i % XS.length] + ',' + (i * ROW + 30); });
+      html += '<section class="cmap-unit" aria-label="Unit ' + u.n + ': ' + esc(u.title) + '">' +
+        '<div class="cmap-unit-head"><span class="unit-n">' + u.n + '</span><b>' + esc(u.title) + '</b><small>' + done + '/' + u.topics.length + '</small></div>' +
+        '<div class="cmap-path" style="height:' + height + 'px">' +
+        '<svg class="cmap-line" viewBox="0 0 280 ' + height + '" preserveAspectRatio="xMinYMin meet" aria-hidden="true"><polyline points="' + pts.join(' ') + '" fill="none" stroke="#C3D3E4" stroke-width="3" stroke-dasharray="2 7" stroke-linecap="round"/></svg>' +
+        u.topics.map(function (t, i) {
+          var x = XS[i % XS.length], y = i * ROW + 4;
+          var st = states[i];
+          var here = t.id === hereId;
+          return '<button type="button" class="cnode ' + st + (here ? ' here' : '') + '" data-topic="' + t.id + '" style="left:' + (x - 26) + 'px;top:' + y + 'px" aria-pressed="false" aria-label="' + esc(t.title + ', ' + L.EVIDENCE[st].label + (here ? ', you are here' : '')) + '">' +
+            nodeSvg(st) + '<span class="cnode-core">' + (st === 'independent' ? U.icon('check') : '<span>' + (i + 1) + '</span>') + '</span></button>' +
+            '<span class="cnode-label" style="left:' + (x + 40) + 'px;top:' + (y + 6) + 'px">' + esc(t.title) + (here ? '<em>You are here</em>' : '') + '</span>';
+        }).join('') + '</div></section>';
+    });
+    html += '<p class="map-note">' + esc(outline.outlineLabel) + '</p></aside>';
+    return html;
+  }
+
+  function bindCourseMap(hereId) {
+    var detail = document.getElementById('cmap-detail');
+    var nodes = view.querySelectorAll('.cnode');
+    function select(id) {
+      var hit = C.findTopic(outline, id);
+      if (!hit) return;
+      var e = L.topicEvidence(courseId, id);
+      nodes.forEach(function (n) { n.setAttribute('aria-pressed', n.getAttribute('data-topic') === id ? 'true' : 'false'); });
+      detail.innerHTML = '<span class="cd-unit">Unit ' + hit.unit.n + ' · ' + esc(hit.unit.title) + '</span>' +
+        '<b class="cd-title">' + esc(hit.topic.title) + '</b>' +
+        '<span class="cd-state">' + dot(e.state) + esc(e.label) + '</span>' +
+        '<a class="btn btn-primary cd-go" href="' + h('/topic/' + id) + '">' + (e.state === 'none' ? 'Start' : 'Open') + U.icon('right') + '</a>';
+    }
+    nodes.forEach(function (n) { n.addEventListener('click', function () { select(n.getAttribute('data-topic')); }); });
+    select(hereId || (nodes[0] && nodes[0].getAttribute('data-topic')));
   }
 
   function routeForActivity(a) {

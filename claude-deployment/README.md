@@ -50,7 +50,13 @@ Rules worth knowing:
   saved with the record. A missed day never removes points or progress.
 - Topic states come from finished activities: no evidence yet, in progress, practiced with help,
   independent evidence, review suggested.
-- Uploaded files are not read. Only the file name is saved.
+- Photos and PDFs are read in the browser by `learn-assets/reader.js`: PDFs with a text layer
+  through pdf.js, photos and scanned PDFs through Tesseract.js text recognition (both pinned, loaded
+  only when a file is chosen). The reader separates numbered questions, keeps (a)/(b) parts with
+  their question, and tidies math spacing. Each question gets its own editable card. Nothing is
+  uploaded and the file is not saved; only the questions the student keeps are stored.
+  Printed sheets read well; handwriting does not, and symbols can be misread, so students check
+  each card.
 
 Demo mode: `course.html?c=<id>&demo=1` shows a labeled banner, uses a separate key
 (`markov.learning.demo.v1`), and adds simulation controls on the progress page. Nothing in demo

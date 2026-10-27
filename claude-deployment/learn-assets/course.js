@@ -165,78 +165,82 @@
     var asg = assignments();
     var plans = Object.keys(c.plans).map(function (k) { return c.plans[k]; });
 
-    // the one next step
+    // One clear next action, said plainly.
+    function split(title) {
+      var i = title.indexOf(': ');
+      return i === -1 ? { main: title, sub: '' } : { main: title.slice(i + 2), sub: title.slice(0, i) };
+    }
     var next;
     if (inMotion) {
-      next = { kicker: 'Pick up where you left off', title: inMotion.title, text: 'This is ' + (inMotion.status === 'paused' ? 'paused' : 'started') + '. Your place is saved.', status: inMotion.status,
-        primary: ['Continue', h(routeForActivity(inMotion))], art: sugg ? sugg.topic.example : '' };
+      var t1 = split(inMotion.title);
+      next = { label: 'Continue where you left off', main: t1.main, sub: [t1.sub, inMotion.status === 'paused' ? 'Paused' : 'Started'].filter(Boolean).join(' · '), go: 'Continue', href: h(routeForActivity(inMotion)) };
     } else if (resume) {
-      next = { kicker: 'Your saved plan', title: resume.label, text: 'Saved, not started yet. Open it when you are ready.', status: resume.status || 'ready',
-        primary: ['Open', h(resume.route)], art: sugg ? sugg.topic.example : '' };
-    } else if (outline && sugg) {
-      next = { kicker: 'A good place to start', title: sugg.topic.title, text: sugg.topic.plain + ' Points and your streak begin when you finish your first activity.', status: null,
-        primary: ['See this topic', h('/topic/' + sugg.topic.id)], art: sugg.topic.example };
+      var t2 = split(resume.label);
+      next = { label: 'Your next step', main: t2.main, sub: [t2.sub, 'Saved, not started'].filter(Boolean).join(' · '), go: 'Open', href: h(resume.route) };
+    } else if (sugg) {
+      next = { label: 'Your next step', main: 'Start with ' + sugg.topic.title, sub: 'Unit ' + sugg.unit.n + ' · ' + sugg.unit.title, go: 'Start', href: h('/topic/' + sugg.topic.id) };
     } else {
-      next = { kicker: 'A good place to start', title: 'Bring your first piece of classwork', text: 'Markov does not have an outline for ' + crs.title + ' yet, so start from the work in front of you.', status: null,
-        primary: ['Bring classwork', h('/homework/new')], art: '' };
+      next = { label: 'Your next step', main: 'Add your first homework', sub: crs.title + ' has no topic outline yet', go: 'Add homework', href: h('/homework/new') };
     }
 
-    var meta = isSchool
-      ? '<span class="tag school">' + U.icon('school') + esc(crs.teacher) + (crs.section ? ', ' + esc(crs.section) : '') + '</span>' + (profile.school.demo ? '<span class="badge-demo">Fictional demo</span>' : '')
-      : '<span class="tag">' + U.icon('user') + 'Your course</span>';
+    var who = isSchool
+      ? esc(crs.teacher) + (crs.section ? ' · ' + esc(crs.section) : '') + (profile.school.demo ? ' <span class="badge-demo">Fictional demo</span>' : '')
+      : 'Your course';
 
-    var hwSub = asg.length ? asg.length + ' from ' + esc(crs.teacher) : (Object.keys(c.homework).length ? Object.keys(c.homework).length + ' saved' : 'Bring your own classwork');
-    var unSub = outline ? 'Find a topic by name or example' : 'Topic pages coming for this course';
-    var soon = plans.filter(function (p) { return p.date; }).sort(function (a, b) { return a.date < b.date ? -1 : 1; })[0];
-    var teSub = soon ? esc(soon.name) + ' · ' + esc(fmtDate(soon.date)) : (plans.length ? esc(plans[0].name) : 'Build a starting plan');
+    var html = '<header class="ch-head" data-area="' + esc(crs.area) + '">' +
+      '<div class="ch-id"><span class="course-mark">' + U.glyph(crs.glyph) + '</span>' +
+      '<div><h1 class="ch-title">' + esc(crs.title) + '</h1><div class="ch-who">' + who + '</div></div></div>' +
+      rewardsHtml() + '</header>' +
 
-    var html = crumbs([['Your courses', 'learn'], [crs.title]]) +
-      '<div class="masthead" data-area="' + esc(crs.area) + '">' +
-      '<span class="course-mark">' + U.glyph(crs.glyph) + '</span>' +
-      '<div><div class="meta">' + meta + '</div><h1>' + esc(crs.title) + '</h1></div>' +
-      rewardsHtml() + '</div>' +
+      '<h2 class="ask" id="ask">What do you want to do?</h2>' +
+      '<nav class="choices3" aria-labelledby="ask">' +
+      '<a class="choice3 hw" href="' + h('/homework') + '" data-intent="homework"><span class="c3-icon">' + ART.hw + '</span>Work on homework</a>' +
+      '<a class="choice3 un" href="' + h('/topics') + '" data-intent="understand"><span class="c3-icon">' + ART.un + '</span>Understand a topic</a>' +
+      '<a class="choice3 te" href="' + h('/test') + '" data-intent="test"><span class="c3-icon">' + ART.te + '</span>Prepare for a test</a>' +
+      '</nav>' +
 
-      '<section class="next" aria-labelledby="next-title">' +
-      '<div style="position:relative"><span class="kicker">' + esc(next.kicker) + '</span>' +
-      '<h2 id="next-title">' + esc(next.title) + '</h2><p>' + esc(next.text) + '</p>' +
-      (next.status ? '<p style="margin-top:12px">' + statusChip(next.status) + '</p>' : '') + '</div>' +
-      '<div class="next-actions"><a class="btn btn-primary" href="' + next.primary[1] + '">' + esc(next.primary[0]) + U.icon('right') + '</a></div>' +
-      (next.art ? '<span class="next-art" aria-hidden="true">' + esc(next.art.replace(/^(Solve|Find|Simplify|Expand)\s+/, '')) + '</span>' : '') +
-      '</section>' +
+      '<section class="nextrow" aria-labelledby="next-main">' +
+      '<span class="next-icon" aria-hidden="true">' + U.icon('right') + '</span>' +
+      '<div class="next-text"><span class="next-label">' + esc(next.label) + '</span>' +
+      '<span class="next-main" id="next-main">' + esc(next.main) + '</span>' +
+      (next.sub ? '<span class="next-sub">' + esc(next.sub) + '</span>' : '') + '</div>' +
+      '<a class="btn btn-primary" href="' + next.href + '">' + esc(next.go) + U.icon('right') + '</a></section>';
 
-      '<nav class="intents" aria-label="What do you want to do?">' +
-      '<a class="intent hw" href="' + h('/homework') + '" data-intent="homework"><span class="intent-icon">' + ART.hw + '</span><span><b>Work on homework</b><span class="sub">' + hwSub + '</span></span><span class="go">' + U.icon('right') + '</span></a>' +
-      '<a class="intent un" href="' + h('/topics') + '" data-intent="understand"><span class="intent-icon">' + ART.un + '</span><span><b>Understand a topic</b><span class="sub">' + unSub + '</span></span><span class="go">' + U.icon('right') + '</span></a>' +
-      '<a class="intent te" href="' + h('/test') + '" data-intent="test"><span class="intent-icon">' + ART.te + '</span><span><b>Prepare for a test</b><span class="sub">' + teSub + '</span></span><span class="go">' + U.icon('right') + '</span></a>' +
-      '</nav>';
-
-    html += '<div class="home-cols"><div>';
-    if (outline) {
-      var cu = currentUnit().id;
-      html += '<div class="section-label"><h2>Course outline</h2><p>' + esc(outline.sequenceLabel) + ' · ' + esc(outline.outlineLabel) + '</p></div>' + outlineHtml(cu) + legendHtml();
-    } else {
-      html += '<div class="section-label"><h2>Course outline</h2></div><div class="panel"><h3>No outline for ' + esc(crs.title) + ' yet</h3><p>Markov has a pilot outline for Algebra I only. You can still save homework and build a test plan with your own topic names here.</p></div>';
-    }
-    html += '</div><div class="side-stack" style="margin-top:36px">';
-    if (outline) {
-      var ev = evidenceSummary();
-      html += '<div class="panel"><h3>Progress in this outline</h3><p class="evidence-line"><strong>' + ev.practiced + ' of ' + ev.total + '</strong> topics practiced. <strong>' + ev.indep + '</strong> with independent evidence.</p>' +
-        '<div class="meter" aria-hidden="true">' + ev.states.map(function (s) { return '<i class="' + s + '"></i>'; }).join('') + '</div>' +
-        '<p style="font-size:13px">Counts only the ' + ev.total + ' topics in this pilot outline, not all of Algebra I.</p>' +
-        '<a class="btn btn-quiet" style="margin-top:6px;padding-left:0" href="' + h('/progress') + '">See progress' + U.icon('right') + '</a></div>';
-    }
+    // What is coming up, only when something real is there.
     var upcoming = [];
     asg.forEach(function (a) {
       var act = L.activity(courseId, 'asg:' + a.id);
-      upcoming.push('<li><a href="' + h('/homework/a/' + a.id) + '">' + U.icon('school') + '<span class="grow">' + esc(a.title.split(':')[0]) + '<br><small>' + esc(crs.teacher) + (a.due ? ' · due ' + esc(fmtDate(a.due)) : '') + '</small></span>' + (act ? statusChip(act.status) : '') + '</a></li>');
+      upcoming.push('<a class="soon" href="' + h('/homework/a/' + a.id) + '">' + ART.hw + '<span class="grow">' + esc(a.title.split(':')[0]) + '</span><small>' + (a.due ? 'Due ' + esc(fmtDate(a.due)) : esc(crs.teacher)) + '</small>' + (act ? statusChip(act.status) : '') + '</a>');
     });
     plans.forEach(function (p) {
       var d = daysUntil(p.date);
-      upcoming.push('<li><a href="' + h('/test/' + p.id) + '">' + U.icon('check') + '<span class="grow">' + esc(p.name) + '<br><small>' + (p.date ? esc(fmtDate(p.date)) + (d != null && d >= 0 ? ' · in ' + d + ' day' + (d === 1 ? '' : 's') : '') : 'No date set') + '</small></span></a></li>');
+      upcoming.push('<a class="soon" href="' + h('/test/' + p.id) + '">' + ART.te + '<span class="grow">' + esc(p.name) + '</span><small>' + (p.date ? esc(fmtDate(p.date)) + (d != null && d >= 0 ? ' · in ' + d + ' day' + (d === 1 ? '' : 's') : '') : 'No date') + '</small></a>');
     });
-    if (upcoming.length) html += '<div class="panel"><h3>Coming up</h3><ul class="mini-list">' + upcoming.join('') + '</ul></div>';
-    html += '<div class="panel"><h3>How points work</h3><p style="font-size:13px">Finish and review a guided activity: +' + L.RULES.guidedCompleteReviewed + '. Finish and review an independent check: +' + L.RULES.independentCompleteReviewed + '. Hints never lower points. Opening, uploading, or planning earns nothing.</p></div>';
-    html += '</div></div>';
+    if (upcoming.length) html += '<h2 class="sub-h">Coming up</h2><div class="soon-list">' + upcoming.join('') + '</div>';
+
+    // The course map: the current unit as a trail, other units as one line each.
+    if (outline) {
+      var ev = evidenceSummary();
+      var cu = currentUnit();
+      var hereId = inMotion && inMotion.topicId ? inMotion.topicId : (sugg ? sugg.topic.id : null);
+      html += '<div class="map-head"><h2 class="sub-h" style="margin:0">Course map</h2>' +
+        '<a class="map-progress" href="' + h('/progress') + '">' + ev.practiced + ' of ' + ev.total + ' topics practiced' + U.icon('right') + '</a></div>' +
+        '<div class="map">' + outline.units.map(function (u) {
+          var states = u.topics.map(function (t) { return L.topicEvidence(courseId, t.id).state; });
+          var done = states.filter(function (s) { return s !== 'none' && s !== 'progress'; }).length;
+          if (u.id !== cu.id) {
+            return '<a class="map-unit" href="' + h('/topics') + '"><span class="unit-n">' + u.n + '</span><span class="grow">' + esc(u.title) + '</span>' +
+              '<span class="mini-dots" aria-hidden="true">' + states.map(dot).join('') + '</span><small>' + done + '/' + u.topics.length + '</small></a>';
+          }
+          return '<div class="map-current"><div class="map-unit is-current"><span class="unit-n">' + u.n + '</span><span class="grow">' + esc(u.title) + '</span><small>' + done + '/' + u.topics.length + '</small></div>' +
+            '<ol class="trail">' + u.topics.map(function (t, i) {
+              var here = t.id === hereId;
+              return '<li class="trail-step' + (here ? ' here' : '') + '"><a href="' + h('/topic/' + t.id) + '"' + (here ? ' aria-current="step"' : '') + '>' + dot(states[i]) +
+                '<span class="trail-name">' + esc(t.title) + '</span>' + (here ? '<span class="trail-here">You are here</span>' : '') + '</a></li>';
+            }).join('') + '</ol></div>';
+        }).join('') + '</div>' +
+        '<p class="map-note">' + esc(outline.outlineLabel) + '. ' + esc(outline.sequenceLabel) + '.</p>';
+    }
 
     mount(html);
     view.querySelectorAll('[data-intent]').forEach(function (a) {

@@ -1,0 +1,305 @@
+/* Markov.ink worksheet reader.
+   Turns a photo or PDF into separate questions, entirely in the browser:
+   - PDFs with a text layer: text is read exactly with pdf.js.
+   - Photos and scanned PDFs: text recognition (OCR) with Tesseract.js.
+   Nothing is uploaded. The libraries load only when a file is chosen.
+   Works best with printed worksheets; handwriting is not reliable here. */
+(function () {
+  'use strict';
+
+  var LIBS = {
+    pdf: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+    pdfWorker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
+    ocr: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js'
+  };
+  var MAX_PAGES = 5;
+
+  var loading = {};
+  function loadScript(src) {
+    if (!loading[src]) {
+      loading[src] = new Promise(function (resolve, reject) {
+        var s = document.createElement('script');
+        s.src = src; s.async = true; s.crossOrigin = 'anonymous';
+        s.onload = resolve;
+        s.onerror = function () { delete loading[src]; reject(new Error('load')); };
+        document.head.appendChild(s);
+      });
+    }
+    return loading[src];
+  }
+
+  /* ---------- Text cleanup ---------- */
+
+  // Character sets built from code points so this file stays plain ASCII.
+  function chars() { return String.fromCharCode.apply(null, arguments); }
+  var LE_GE = chars(0x2264, 0x2265);
+  var DASHES = new RegExp('[' + chars(0x2212, 0x2012, 0x2013, 0x2014, 0x2015) + ']', 'g');
+  var SINGLE_QUOTES = new RegExp('[' + chars(0x2018, 0x2019, 0x201a) + ']', 'g');
+  var DOUBLE_QUOTES = new RegExp('[' + chars(0x201c, 0x201d, 0x201e) + ']', 'g');
+  var NBSP = new RegExp(chars(0xa0), 'g');
+  var COMPARE = new RegExp('\\s*([=<>' + LE_GE + '])\\s*', 'g');
+  var MATH_HINT = new RegExp('[=<>' + LE_GE + '^]|\\d\\s*[a-z]\\b|\\b[a-z]\\s*[+\\-*/]', 'i');
+
+  // Space binary + and - in math only ("3x-7" reads "3x - 7"), never in words like "two-step",
+  // and never after a part label like "(a)", so "(a) -2x" keeps its minus sign.
+  var MATH_OP;
+  try { MATH_OP = new RegExp('((?<![a-z])[a-z]|\\d|\\))\\s*([+\\-])\\s*(?=\\d|[a-z](?![a-z])|\\()', 'gi'); }
+  catch (e) { MATH_OP = /(\d|\))\s*([+\-])\s*(?=\d|\()/g; } // older Safari: digits and brackets only
+
+  // Text recognition often drops an opening bracket: "4x - 1) = 20" is almost always "4(x - 1) = 20".
+  function repairBrackets(t) {
+    var open = (t.match(/\(/g) || []).length, close = (t.match(/\)/g) || []).length;
+    if (close !== open + 1 || !/=/.test(t)) return t;
+    return t.replace(/(\d)([a-z])(\s*[+\-]\s*\d+\s*\))/i, '$1($2$3');
+  }
+
+  function clean(s) {
+    var t = String(s || '')
+      .replace(DASHES, '-')
+      .replace(SINGLE_QUOTES, "'").replace(DOUBLE_QUOTES, '"')
+      .replace(NBSP, ' ')
+      .replace(/-{2,}/g, '-')
+      .replace(COMPARE, ' $1 ');
+    var label = (t.match(/^\s*\(?(?:[a-h]|i{1,3}|iv|v)\)\s*/i) || [''])[0];
+    t = label + repairBrackets(t.slice(label.length).replace(MATH_OP, '$1 $2 '));
+    return t.replace(/[ \t]+/g, ' ').trim();
+  }
+
+  function isHeader(line) {
+    return /^(name|date|period|class|block|score|teacher|hour)\b[^a-z]{0,3}/i.test(line) && /[:_]/.test(line) ||
+      /^[_\-.\s]{4,}$/.test(line);
+  }
+
+  /* ---------- Splitting lines into questions ---------- */
+
+  var Q_START = /^(?:q(?:uestion)?\.?\s*)?(\d{1,2})\s*[.):\]]\s*(.*)$/i;
+  // "(b) x/3" or "(b)x/3" (text recognition drops the space) or "b. x/3"
+  var PART = /^(?:\(([a-h]|i{1,3}|iv|v)\)\s*|([a-h])[.)]\s+)(.+)$/i;
+
+  // Splits a line that holds two questions side by side, like "1. 3x = 9   2. x + 4 = 7".
+  function splitInline(line, expected) {
+    var out = [line];
+    for (var n = expected; n < expected + 5; n++) {
+      var last = out[out.length - 1];
+      var re = new RegExp('\\s(?=' + n + '\\s*[.)]\\s+\\S)');
+      var m = last.slice(1).search(re);
+      if (m === -1) {
+        // text recognition can drop the space: "= 11 2.5x + 4" when the left side is already a full equation
+        var tight = last.slice(1).search(new RegExp('\\s(?=' + n + '[.)][a-z(\\-]|' + n + '[.)]\\d+[a-z(])', 'i'));
+        if (tight === -1 || !/[=?]/.test(last.slice(0, tight + 1))) continue;
+        m = tight;
+      }
+      out[out.length - 1] = last.slice(0, m + 1).trim();
+      out.push(last.slice(m + 1).trim());
+    }
+    return out;
+  }
+
+  function looksLikeMath(s) { return MATH_HINT.test(s); }
+
+  function segment(rawLines) {
+    var lines = [];
+    rawLines.forEach(function (l) {
+      // a wide gap before a number usually means a second column: split there first
+      String(l || '').split(/\s{3,}(?=(?:q\.?\s*)?\d{1,2}\s*[.)])/i).forEach(function (part) {
+        var c = clean(part); if (c) lines.push(c);
+      });
+    });
+    var intro = [], questions = [], cur = null, last = 0;
+
+    // first pass: is this a numbered sheet?
+    var numbered = lines.filter(function (l) { return Q_START.test(l); }).length >= 2;
+
+    lines.forEach(function (line) {
+      if (isHeader(line)) return;
+      var pieces = numbered ? splitInline(line, last + 1) : [line];
+      pieces.forEach(function (piece) {
+        var m = numbered ? piece.match(Q_START) : null;
+        var n = m ? +m[1] : 0;
+        if (m && n > last && n <= last + 3 && m[2] !== undefined) {
+          cur = { n: n, lines: m[2] ? [m[2]] : [] };
+          questions.push(cur);
+          last = n;
+          return;
+        }
+        var p = cur ? piece.match(PART) : null;
+        if (p) { cur.lines.push('(' + (p[1] || p[2]).toLowerCase() + ') ' + p[3]); return; }
+        if (!numbered) {
+          // no numbers: each line with math or a question mark starts a question
+          if (!cur || looksLikeMath(piece) || /\?$/.test(piece) || /^(solve|find|simplify|expand|evaluate|graph|write|explain)\b/i.test(piece)) {
+            cur = { n: questions.length + 1, lines: [piece] };
+            questions.push(cur);
+          } else {
+            cur.lines.push(piece);
+          }
+          return;
+        }
+        if (!cur) { intro.push(piece); return; }
+        // continuation of the current question
+        var prev = cur.lines[cur.lines.length - 1];
+        if (prev && !looksLikeMath(piece) && !looksLikeMath(prev) && !/^\(/.test(piece) && !/[.?:]$/.test(prev)) {
+          cur.lines[cur.lines.length - 1] = prev + ' ' + piece;
+        } else {
+          cur.lines.push(piece);
+        }
+      });
+    });
+
+    var qs = questions
+      .map(function (q) { return q.lines.join('\n').trim().slice(0, 600); })
+      .filter(function (t) { return t.length > 0; })
+      .slice(0, 40);
+    var title = (intro.filter(function (l) { return l.length > 3 && l.length <= 60 && !/[=]/.test(l); })[0] || '')
+      .replace(/^[^\w(]+/, '').replace(/[^\w)?.!]+$/, '');
+    return { questions: qs, intro: intro, title: title };
+  }
+
+  /* ---------- PDF ---------- */
+
+  function pdfPageLines(page) {
+    return page.getTextContent().then(function (tc) {
+      var rows = {};
+      tc.items.forEach(function (it) {
+        if (!it.str || !it.str.trim()) return;
+        var y = Math.round(it.transform[5] / 3) * 3, x = it.transform[4];
+        (rows[y] = rows[y] || []).push({ x: x, w: it.width || 0, s: it.str });
+      });
+      return Object.keys(rows).map(Number).sort(function (a, b) { return b - a; }).map(function (y) {
+        var parts = rows[y].sort(function (a, b) { return a.x - b.x; });
+        var out = '', end = null;
+        parts.forEach(function (p) {
+          if (end !== null) out += (p.x - end > 24 ? '   ' : (p.x - end > 1.5 ? ' ' : ''));
+          out += p.s; end = p.x + p.w;
+        });
+        return out;
+      });
+    });
+  }
+
+  function renderPage(page) {
+    var vp = page.getViewport({ scale: 2 });
+    var canvas = document.createElement('canvas');
+    canvas.width = vp.width; canvas.height = vp.height;
+    return page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise.then(function () { return canvas; });
+  }
+
+  function readPdf(file, progress) {
+    progress({ phase: 'load', text: 'Opening the PDF' });
+    return loadScript(LIBS.pdf).then(function () {
+      var lib = window.pdfjsLib;
+      lib.GlobalWorkerOptions.workerSrc = LIBS.pdfWorker;
+      return file.arrayBuffer().then(function (buf) { return lib.getDocument({ data: buf }).promise; });
+    }).then(function (doc) {
+      var n = Math.min(doc.numPages, MAX_PAGES);
+      var pages = [];
+      for (var i = 1; i <= n; i++) pages.push(i);
+      return pages.reduce(function (p, i) {
+        return p.then(function (acc) {
+          progress({ phase: 'read', text: 'Reading page ' + i + ' of ' + n, frac: (i - 1) / n });
+          return doc.getPage(i).then(function (page) {
+            return pdfPageLines(page).then(function (lines) { acc.push({ page: page, lines: lines }); return acc; });
+          });
+        });
+      }, Promise.resolve([])).then(function (acc) {
+        var chars = acc.reduce(function (s, a) { return s + a.lines.join('').length; }, 0);
+        if (chars >= 20) {
+          return { lines: [].concat.apply([], acc.map(function (a) { return a.lines; })), method: 'pdf-text', pages: n, truncated: doc.numPages > n };
+        }
+        // scanned PDF: no text layer, so recognize each page image
+        return acc.reduce(function (p, a, idx) {
+          return p.then(function (all) {
+            return renderPage(a.page).then(function (canvas) {
+              return ocr(canvas, function (f) { progress({ phase: 'ocr', text: 'Recognizing page ' + (idx + 1) + ' of ' + n, frac: (idx + f) / n }); });
+            }).then(function (r) { all.lines = all.lines.concat(r.lines); all.conf.push(r.confidence); return all; });
+          });
+        }, Promise.resolve({ lines: [], conf: [] })).then(function (all) {
+          var c = all.conf.length ? all.conf.reduce(function (s, v) { return s + v; }, 0) / all.conf.length : 0;
+          return { lines: all.lines, method: 'ocr', pages: n, confidence: c, truncated: doc.numPages > n };
+        });
+      });
+    });
+  }
+
+  /* ---------- Photos ---------- */
+
+  // Grayscale and enlarge small photos so recognition has more to work with.
+  function prepareImage(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        var scale = Math.min(2.5, Math.max(1, 1800 / img.naturalWidth));
+        var c = document.createElement('canvas');
+        c.width = Math.round(img.naturalWidth * scale); c.height = Math.round(img.naturalHeight * scale);
+        var ctx = c.getContext('2d');
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        // gentle grayscale and contrast; a hard threshold erases thin marks like + ( /
+        var d = ctx.getImageData(0, 0, c.width, c.height), px = d.data;
+        for (var i = 0; i < px.length; i += 4) {
+          var g = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+          g = Math.max(0, Math.min(255, (g - 128) * 1.35 + 140));
+          px[i] = px[i + 1] = px[i + 2] = g;
+        }
+        ctx.putImageData(d, 0, 0);
+        URL.revokeObjectURL(url);
+        resolve(c);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('image')); };
+      img.src = url;
+    });
+  }
+
+  // One recognition worker, reused, that keeps the wide gaps between columns.
+  var worker = null, onFracNow = null;
+  function getWorker() {
+    if (!worker) {
+      worker = loadScript(LIBS.ocr).then(function () {
+        return window.Tesseract.createWorker('eng', 1, {
+          logger: function (m) { if (m.status === 'recognizing text' && onFracNow) onFracNow(m.progress || 0); }
+        });
+      }).then(function (w) {
+        return w.setParameters({ preserve_interword_spaces: '1' }).then(function () { return w; });
+      }).catch(function (e) { worker = null; throw e; });
+    }
+    return worker;
+  }
+
+  function ocr(source, onFrac) {
+    return getWorker().then(function (w) {
+      onFracNow = onFrac;
+      return w.recognize(source);
+    }).then(function (res) {
+      onFracNow = null;
+      return { lines: String(res.data.text || '').split(/\r?\n/), confidence: res.data.confidence || 0 };
+    });
+  }
+
+  function readImage(file, progress) {
+    progress({ phase: 'load', text: 'Preparing the photo' });
+    return prepareImage(file).then(function (canvas) {
+      progress({ phase: 'ocr', text: 'Loading the text reader', frac: 0 });
+      return ocr(canvas, function (f) { progress({ phase: 'ocr', text: 'Reading the photo', frac: f }); });
+    }).then(function (r) { return { lines: r.lines, method: 'ocr', pages: 1, confidence: r.confidence }; });
+  }
+
+  /* ---------- Public ---------- */
+
+  function read(file, onProgress) {
+    var progress = onProgress || function () {};
+    var isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    var isImage = /^image\/(png|jpe?g|webp|gif|bmp)$/i.test(file.type);
+    if (!isPdf && !isImage) return Promise.reject(new Error('type'));
+    return (isPdf ? readPdf(file, progress) : readImage(file, progress)).then(function (r) {
+      var seg = segment(r.lines);
+      r.questions = seg.questions; r.intro = seg.intro; r.title = seg.title;
+      return r;
+    });
+  }
+
+  window.MarkovReader = {
+    read: read,
+    segment: segment,
+    fromText: function (text) { return segment(String(text || '').split(/\r?\n/)); },
+    clean: clean
+  };
+})();

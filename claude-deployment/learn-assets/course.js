@@ -28,6 +28,7 @@
     flame: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21c-3.9 0-7-2.7-7-6.5 0-3.6 2.6-5.6 3.8-8.5.4 2 1.6 3.2 2.7 3.6C11.3 6.7 12.8 4.4 15 3c-.4 3 1.4 4.6 2.6 6.4A7 7 0 0 1 19 14.5C19 18.3 15.9 21 12 21Z"/></svg>',
     drop: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5s6 6.3 6 10.5a6 6 0 0 1-12 0C6 9.8 12 3.5 12 3.5Z"/><path d="M9.5 14.5a2.5 2.5 0 0 0 2.5 2.5"/></svg>',
     sheet: '<svg class="sheet" viewBox="0 0 40 48" fill="none" aria-hidden="true"><rect x="3" y="3" width="30" height="40" rx="4" fill="#fff" stroke="currentColor" stroke-width="1.8"/><path d="M9 13h16M9 19h18M9 25h12" stroke="#B9C9DA" stroke-width="1.8" stroke-linecap="round"/><path d="M9 33c2-2 4 1 6-1s3 1 5-1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    camera: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4Z"/><circle cx="12" cy="13" r="3.5"/></svg>',
     search: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>',
     chev: '<svg class="icon chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
     underline: '<svg class="ink" viewBox="0 0 90 30" fill="none" aria-hidden="true"><path d="M4 20c14-8 26 6 40-2s24 4 42-6" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>'
@@ -366,7 +367,7 @@
     if (editId && !existing) { viewMissing('That classwork is no longer saved here.'); return; }
     if (!draftHw || draftHw.forId !== (editId || null)) {
       draftHw = existing
-        ? { forId: editId, title: existing.title, source: existing.source, text: existing.questions.map(function (q) { return q.text; }).join('\n'), file: existing.file, demo: existing.demo, questions: JSON.parse(JSON.stringify(existing.questions)), method: existing.file && !existing.questions.length ? 'file' : 'paste' }
+        ? { forId: editId, title: existing.title, source: existing.source, text: existing.questions.map(function (q) { return q.text; }).join('\n'), file: existing.file, demo: existing.demo, questions: JSON.parse(JSON.stringify(existing.questions)), method: existing.source === 'file' || existing.source === 'file-read' ? 'file' : 'paste', read: existing.source === 'file-read' ? { done: true, method: existing.readMethod || 'ocr', confidence: 100, questions: existing.questions.length } : null }
         : { forId: null, title: '', source: 'paste', text: '', file: null, demo: false, questions: null, method: 'paste' };
     }
     var d = draftHw;
@@ -403,65 +404,149 @@
   function renderMethod() {
     var d = draftHw, box = document.getElementById('method-body');
     if (d.method === 'paste') {
-      box.innerHTML = '<label class="label" for="hw-text">Questions, one per line</label>' +
+      box.innerHTML = '<label class="label" for="hw-text">Type or paste the questions</label>' +
         '<textarea class="textarea" id="hw-text" placeholder="1. 3x + 2 = x + 10&#10;2. Solve 5x - 4 = 21&#10;3. Expand 2(x + 6)">' + esc(d.text) + '</textarea>' +
-        '<div class="form-actions" style="margin-top:10px"><button type="button" class="btn btn-ghost" id="btn-find">Find the questions</button>' +
+        '<div class="form-actions" style="margin-top:10px"><button type="button" class="btn btn-ghost" id="btn-find">Separate the questions</button>' +
         '<button type="button" class="btn btn-quiet" id="btn-demo">Use a demo worksheet</button></div>';
       var ta = document.getElementById('hw-text');
       ta.addEventListener('input', function () { d.text = ta.value; hideErr(); });
       document.getElementById('btn-find').addEventListener('click', function () { detect(false); });
       document.getElementById('btn-demo').addEventListener('click', function () {
-        d.text = '3x + 2 = x + 10\n5x - 4 = 21\nExpand 2(x + 6)\nx/4 + 1 = 3\nA phone plan costs $20 plus $5 per GB. How many GB for $45?';
+        d.text = '1. 3x + 2 = x + 10\n2. 5x - 4 = 21\n3. Expand 2(x + 6)\n4. Solve and check:\n(a) x/4 + 1 = 3\n(b) -2x + 9 = 1\n5. A phone plan costs $20 plus $5 per GB.\nHow many GB can you use for $45?';
         d.demo = true;
         if (!d.title) d.title = 'Demo worksheet';
         document.getElementById('hw-title').value = d.title;
         ta.value = d.text;
         detect(true);
       });
-    } else {
-      box.innerHTML = '<div class="file-pick"><span style="color:var(--royal)">' + U.icon('plus', 'icon') + '</span><div style="flex:1;min-width:0"><label class="label" for="hw-file" style="margin:0 0 6px">Choose an image or PDF</label>' +
-        '<input type="file" id="hw-file" accept="image/*,application/pdf">' +
-        (d.file ? '<p class="input-help" style="margin-top:6px">Selected: <strong>' + esc(d.file.name) + '</strong></p>' : '') + '</div></div>' +
-        '<div class="note warn" style="margin-top:12px">' + U.icon('lock') + '<p><strong>Reading questions from files is not available yet.</strong> Markov saves the file name so you know which sheet this is. The file stays on your device. Type the questions under “Type or paste” if you want them linked to topics.</p></div>';
-      document.getElementById('hw-file').addEventListener('change', function (e) {
-        var f = e.target.files && e.target.files[0];
-        d.file = f ? { name: f.name, type: f.type, size: f.size } : null;
-        if (f && !d.title) { d.title = f.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 80); document.getElementById('hw-title').value = d.title; }
-        hideErr();
-        renderMethod();
-      });
+      return;
     }
+    var r = d.read;
+    box.innerHTML = '<div class="file-pick">' +
+      '<div class="file-buttons"><label class="btn btn-primary file-btn">' + U.icon('plus') + 'Choose a photo or PDF<input type="file" id="hw-file" accept="image/png,image/jpeg,image/webp,application/pdf" class="sr-only"></label>' +
+      '<label class="btn btn-ghost file-btn">' + ART.camera + 'Take a photo<input type="file" id="hw-cam" accept="image/*" capture="environment" class="sr-only"></label></div>' +
+      '<p class="input-help" style="margin:10px 0 0">' + (d.file ? 'Selected: <strong>' + esc(d.file.name) + '</strong>' : 'Printed worksheets and textbook pages read best. A PDF with real text reads exactly.') + '</p>' +
+      '<div id="read-status" aria-live="polite"></div></div>' +
+      (r && r.done ? '<div class="note' + (r.method === 'ocr' && r.confidence < 70 ? ' warn' : '') + '" style="margin-top:12px">' + U.icon('check') + '<p>' +
+        (r.method === 'pdf-text' ? '<strong>Read from the PDF text.</strong> ' : '<strong>Read with text recognition.</strong> ') +
+        (r.questions ? 'Found ' + r.questions + ' question' + (r.questions === 1 ? '' : 's') + '. ' : '') +
+        (r.method === 'ocr' ? 'Check each one against your sheet and fix anything misread.' : 'Check that each question is complete.') +
+        (r.truncated ? ' Only the first 5 pages were read.' : '') + '</p></div>' : '') +
+      '<p class="input-help" style="margin-top:10px">Your file is read on this device and is not uploaded or saved. Only the questions you keep are saved.</p>';
+    ['hw-file', 'hw-cam'].forEach(function (id) {
+      document.getElementById(id).addEventListener('change', function (e) {
+        var f = e.target.files && e.target.files[0];
+        if (f) readFile(f);
+      });
+    });
+  }
+
+  function readFile(f) {
+    var d = draftHw;
+    d.file = { name: f.name || 'Photo', type: f.type, size: f.size };
+    d.read = { busy: true };
+    d.demo = false;
+    if (!d.title) { d.title = (f.name || 'Photo').replace(/\.[a-z0-9]+$/i, '').slice(0, 80); document.getElementById('hw-title').value = d.title; }
+    hideErr();
+    renderMethod();
+    var status = document.getElementById('read-status');
+    function show(p) {
+      var pct = Math.round(100 * (p.frac || 0));
+      status.innerHTML = '<div class="read-progress"><span>' + esc(p.text) + (p.frac != null ? ' · ' + pct + '%' : '') + '</span>' +
+        '<span class="track"><i style="width:' + (p.frac != null ? pct : 8) + '%"></i></span></div>';
+    }
+    show({ text: 'Starting' });
+    var form = document.getElementById('hw-form');
+    form.setAttribute('aria-busy', 'true');
+    window.MarkovReader.read(f, show).then(function (res) {
+      form.removeAttribute('aria-busy');
+      if (res.title && (!d.title || d.title === f.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 80))) { d.title = res.title; document.getElementById('hw-title').value = d.title; }
+      d.read = { done: true, method: res.method, confidence: Math.round(res.confidence || 100), questions: res.questions.length, truncated: !!res.truncated };
+      setQuestions(res.questions);
+      renderMethod();
+      if (!res.questions.length) showErr('No questions could be found in that file. Try a clearer photo, or type them under “Type or paste”.', null);
+      var first = document.querySelector('.qcard textarea'); if (first) first.focus();
+    }).catch(function (err) {
+      form.removeAttribute('aria-busy');
+      d.read = null;
+      renderMethod();
+      showErr(err && err.message === 'type' ? 'That file type cannot be read. Use a PNG or JPG photo, or a PDF.'
+        : err && err.message === 'load' ? 'The reader could not load. Check your internet connection and try again.'
+        : 'That file could not be read. Try another photo or PDF, or type the questions.', null);
+    });
+  }
+
+  function suggestFor(text) {
+    var g = outline ? C.guessTopicFromProblem(String(text).split('\n').filter(function (l) { return /[=<>]/.test(l); })[0] || text) : null;
+    return g;
+  }
+
+  function setQuestions(texts) {
+    var d = draftHw;
+    var prev = {};
+    (d.questions || []).forEach(function (q) { prev[q.text] = q; });
+    d.questions = texts.map(function (t, i) {
+      if (prev[t]) return prev[t];
+      var g = suggestFor(t);
+      return { id: 'q' + (i + 1) + '-' + Math.random().toString(36).slice(2, 6), text: t, topicId: g && g.confident ? g.id : null, suggested: g ? g.id : null };
+    });
+    renderQuestions();
   }
 
   function detect(isDemo) {
     var d = draftHw;
-    var lines = L.splitQuestions(d.text);
-    if (!lines.length) { showErr('Type or paste at least one question first.', document.getElementById('hw-text')); return; }
-    var prev = {};
-    (d.questions || []).forEach(function (q) { prev[q.text] = q; });
-    d.questions = lines.map(function (t, i) {
-      if (prev[t]) return prev[t];
-      var g = outline ? C.guessTopicFromProblem(t) : null;
-      return { id: 'q' + (i + 1), text: t, topicId: g && g.confident ? g.id : null, suggested: g ? g.id : null };
-    });
+    var res = window.MarkovReader.fromText(d.text);
+    if (!res.questions.length) { showErr('Type or paste at least one question first.', document.getElementById('hw-text')); return; }
     if (!isDemo) d.demo = false;
     hideErr();
-    renderQuestions();
+    setQuestions(res.questions);
   }
 
   function renderQuestions() {
     var d = draftHw, area = document.getElementById('q-area');
     if (!d.questions || !d.questions.length) { area.innerHTML = ''; return; }
-    area.innerHTML = '<div class="section-label"><h2>' + d.questions.length + ' question' + (d.questions.length === 1 ? '' : 's') + ' found</h2><p>' +
-      (outline ? 'Suggestions come from the shape of each problem. Change any of them, or leave “Not sure yet”.' : 'Topic links need a course outline, so these stay as “Not sure yet” for now.') + '</p></div>' +
+    area.innerHTML = '<div class="section-label"><h2>' + d.questions.length + ' question' + (d.questions.length === 1 ? '' : 's') + '</h2><p>' +
+      (outline ? 'Each question has its own space. Fix the text if needed and pick a topic, or leave “Not sure yet”.' : 'Each question has its own space. Topic links need a course outline, so these stay “Not sure yet”.') + '</p></div>' +
       (d.demo ? '<div class="note warn" style="margin-bottom:10px">' + U.icon('lock') + '<p><span class="badge-demo">Demo worksheet</span> These sample questions were typed in for you. They did not come from a file.</p></div>' : '') +
-      '<ol class="q-review">' + d.questions.map(function (q, i) {
-        return '<li><span class="math" style="white-space:normal">' + esc(q.text) + '</span><span class="select-wrap"><label class="sr-only" for="qt-' + i + '">Topic for question ' + (i + 1) + '</label>' +
-          '<select class="select" id="qt-' + i + '" data-i="' + i + '"' + (outline ? '' : ' disabled') + '>' + topicOptions(q.topicId) + '</select>' +
-          (q.suggested && !q.topicId && outline ? '<div class="sugg">Maybe: ' + esc(topicTitle(q.suggested)) + '</div>' : (q.suggested && q.topicId === q.suggested ? '<div class="sugg">Suggested</div>' : '')) + '</span></li>';
-      }).join('') + '</ol>';
+      '<ol class="qcards">' + d.questions.map(function (q, i) {
+        var lines = Math.min(8, Math.max(1, q.text.split('\n').length));
+        return '<li class="qcard"><div class="qcard-top"><span class="qnum" aria-hidden="true">' + (i + 1) + '</span>' +
+          '<label class="sr-only" for="qtext-' + i + '">Question ' + (i + 1) + '</label>' +
+          '<span class="grow"></span>' +
+          '<label class="sr-only" for="qt-' + i + '">Topic for question ' + (i + 1) + '</label>' +
+          '<select class="select qcard-topic" id="qt-' + i + '" data-i="' + i + '"' + (outline ? '' : ' disabled') + '>' + topicOptions(q.topicId) + '</select>' +
+          '<button type="button" class="qcard-remove" data-remove="' + i + '" aria-label="Remove question ' + (i + 1) + '">' + U.icon('close') + '</button></div>' +
+          '<textarea class="qtext" id="qtext-' + i + '" data-text="' + i + '" rows="' + lines + '" spellcheck="false">' + esc(q.text) + '</textarea>' +
+          (q.suggested && !q.topicId && outline ? '<div class="sugg">Maybe: ' + esc(topicTitle(q.suggested)) + '</div>' : (q.suggested && q.topicId === q.suggested ? '<div class="sugg">Suggested topic</div>' : '')) +
+          '</li>';
+      }).join('') + '</ol>' +
+      '<button type="button" class="btn btn-quiet" id="btn-add-q">' + U.icon('plus') + 'Add a question</button>';
     area.querySelectorAll('select[data-i]').forEach(function (s) {
       s.addEventListener('change', function () { d.questions[+s.getAttribute('data-i')].topicId = s.value || null; });
+    });
+    area.querySelectorAll('textarea[data-text]').forEach(function (t) {
+      function fit() { t.style.height = 'auto'; t.style.height = (t.scrollHeight + 2) + 'px'; }
+      fit();
+      t.addEventListener('input', function () { d.questions[+t.getAttribute('data-text')].text = t.value; fit(); });
+      t.addEventListener('blur', function () {
+        var q = d.questions[+t.getAttribute('data-text')];
+        q.text = t.value.trim();
+        if (!q.topicId) { var g = suggestFor(q.text); q.suggested = g ? g.id : null; }
+      });
+    });
+    area.querySelectorAll('[data-remove]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var i = +b.getAttribute('data-remove');
+        d.questions.splice(i, 1);
+        renderQuestions();
+        var next = area.querySelector('[data-remove="' + Math.min(i, d.questions.length - 1) + '"]') || document.getElementById('btn-add-q');
+        if (next) next.focus();
+      });
+    });
+    document.getElementById('btn-add-q').addEventListener('click', function () {
+      d.questions.push({ id: 'q' + Date.now().toString(36), text: '', topicId: null, suggested: null });
+      renderQuestions();
+      var all = area.querySelectorAll('.qtext'); all[all.length - 1].focus();
     });
   }
 
@@ -470,10 +555,13 @@
     var titleEl = document.getElementById('hw-title');
     d.title = titleEl.value.trim();
     if (!d.title) { showErr('Give this classwork a name so you can find it later.', titleEl); return; }
-    if (d.method === 'paste' && d.text.trim() && (!d.questions || L.splitQuestions(d.text).join('\n') !== d.questions.map(function (q) { return q.text; }).join('\n'))) detect(d.demo);
+    if (d.read && d.read.busy) { showErr('Wait a moment, the file is still being read.', null); return; }
+    if (d.method === 'paste' && d.text.trim() && !(d.questions && d.questions.length)) detect(d.demo);
+    if (d.questions) d.questions = d.questions.map(function (q) { q.text = String(q.text || '').trim(); return q; }).filter(function (q) { return q.text; });
     var hasQ = d.questions && d.questions.length;
-    if (!hasQ && !d.file) { showErr('Add at least one question, or choose a file.', null); return; }
-    var saved = L.saveHomework(courseId, { id: d.forId, title: d.title, source: d.demo ? 'demo' : (hasQ ? 'paste' : 'file'), file: d.file, demo: d.demo, questions: hasQ ? d.questions : [] });
+    if (!hasQ && !d.file) { showErr('Add at least one question, or choose a photo or PDF.', null); return; }
+    var source = d.demo ? 'demo' : (d.file && d.read && d.read.done ? 'file-read' : (hasQ ? 'paste' : 'file'));
+    var saved = L.saveHomework(courseId, { id: d.forId, title: d.title, source: source, file: d.file, demo: d.demo, readMethod: d.read && d.read.method, questions: hasQ ? d.questions : [] });
     L.prepareActivity(courseId, { id: 'hw:' + saved.id, type: 'homework', kind: 'guided', homeworkId: saved.id, title: saved.title });
     L.setResume(courseId, '/homework/h/' + saved.id, saved.title, 'ready');
     draftHw = null;
@@ -482,22 +570,31 @@
 
   /* ---------- Homework briefs ---------- */
 
+  // A question in its own space: number, the text line by line, parts indented.
+  function questionBox(q, i) {
+    var body = String(q.text).split('\n').map(function (line) {
+      return /^\([a-hiv]{1,3}\)/.test(line) ? '<span class="qline part">' + esc(line) + '</span>' : '<span class="qline">' + esc(line) + '</span>';
+    }).join('');
+    return '<li class="qbox"><span class="qnum" aria-hidden="true">' + (i + 1) + '</span><div class="qbody"><div class="qtext-view">' + body + '</div>' +
+      '<div class="qmeta">' + (q.topicId ? '<a class="tag" href="' + h('/topic/' + q.topicId) + '">' + dot(L.topicEvidence(courseId, q.topicId).state) + esc(topicTitle(q.topicId)) + '</a>' : '<span class="tag">Not sure yet</span>') + '</div></div></li>';
+  }
+
   function viewHomeworkBrief(id) {
     var w = L.course(courseId).homework[id];
     if (!w) { viewMissing('That classwork is no longer saved here.'); return; }
     var act = L.activity(courseId, 'hw:' + id) || L.prepareActivity(courseId, { id: 'hw:' + id, type: 'homework', kind: 'guided', homeworkId: id, title: w.title });
-    var groups = {};
-    w.questions.forEach(function (q) { var k = q.topicId || ''; (groups[k] = groups[k] || []).push(q); });
-    var keys = Object.keys(groups).sort(function (a, b) { return a === '' ? 1 : b === '' ? -1 : 0; });
-    var main = '<section><h2>Source</h2><p style="margin:0;color:var(--ink-2)">' +
-      (w.source === 'demo' ? '<span class="badge-demo">Demo worksheet</span> Sample questions, not from a file.' : w.source === 'file' ? 'File: ' + esc(w.file ? w.file.name : '') + '. Questions were not read from it.' : 'Questions you typed or pasted.' + (w.file ? ' File attached: ' + esc(w.file.name) + '.' : '')) + '</p></section>';
+    var topics = {};
+    w.questions.forEach(function (q) { if (q.topicId) topics[q.topicId] = (topics[q.topicId] || 0) + 1; });
+    var src = w.source === 'demo' ? '<span class="badge-demo">Demo worksheet</span> Sample questions, not from a file.'
+      : w.source === 'file-read' ? 'Read from ' + esc(w.file ? w.file.name : 'your file') + (w.readMethod === 'ocr' ? ' with text recognition.' : '.') + ' The file itself was not saved.'
+      : w.source === 'file' ? 'File: ' + esc(w.file ? w.file.name : '') + '. No questions were kept from it.'
+      : 'Questions you typed or pasted.';
+    var main = '<section><h2>Source</h2><p style="margin:0;color:var(--ink-2)">' + src + '</p>' +
+      (Object.keys(topics).length ? '<div class="prereqs" style="margin-top:12px">' + Object.keys(topics).map(function (t) { return '<a class="prereq" href="' + h('/topic/' + t) + '">' + esc(topicTitle(t)) + ' <span style="color:var(--muted);font-weight:500">' + topics[t] + '</span></a>'; }).join('') + '</div>' : '') + '</section>';
     if (w.questions.length) {
-      main += '<section><h2>Questions by topic</h2><p style="margin:0 0 10px;color:var(--muted);font-size:14px">One worksheet, linked to each topic it touches.</p>' + keys.map(function (k) {
-        return '<div style="margin-top:14px"><div style="display:flex;gap:8px;align-items:center;font-weight:700;font-size:14px">' + (k ? '<a href="' + h('/topic/' + k) + '">' + esc(topicTitle(k)) + '</a>' : '<span class="tag">Not sure yet</span>') + '<span style="color:var(--muted);font-weight:500">' + groups[k].length + '</span></div>' +
-          '<ul class="rules" style="margin-top:4px">' + groups[k].map(function (q) { return '<li><span class="math" style="white-space:normal">' + esc(q.text) + '</span></li>'; }).join('') + '</ul></div>';
-      }).join('') + '</section>';
+      main += '<section><h2>' + w.questions.length + ' question' + (w.questions.length === 1 ? '' : 's') + '</h2><ol class="qboxes">' + w.questions.map(questionBox).join('') + '</ol></section>';
     } else {
-      main += '<section><h2>Questions</h2><p style="margin:0;color:var(--soft)">No questions typed yet. Edit this classwork to add them, so the tutor knows what you are working on.</p></section>';
+      main += '<section><h2>Questions</h2><p style="margin:0;color:var(--soft)">No questions yet. Edit this classwork to add them, so the tutor knows what you are working on.</p></section>';
     }
     main += '<section><h2>Help you can use</h2><ul class="rules"><li>' + U.icon('check') + 'Hints and step checks</li><li>' + U.icon('check') + 'The tutor will not give final answers</li><li>' + U.icon('check') + 'Nothing is shared with anyone. This is your own classwork.</li></ul></section>';
     mount(crumbs(base().concat([['Homework', h('/homework')], [w.title]])) +

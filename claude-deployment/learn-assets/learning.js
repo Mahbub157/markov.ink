@@ -301,11 +301,14 @@
     var c = course(courseId);
     var id = hw.id || uid('hw');
     c.homework[id] = {
-      id: id, title: str(hw.title, 80) || 'Untitled classwork', source: hw.source,
+      id: id, title: str(hw.title, 80) || 'Untitled classwork',
+      source: ['paste', 'file', 'file-read', 'demo'].indexOf(hw.source) !== -1 ? hw.source : 'paste',
+      readMethod: hw.readMethod === 'ocr' || hw.readMethod === 'pdf-text' ? hw.readMethod : null,
       file: hw.file ? { name: str(hw.file.name, 120), type: str(hw.file.type, 60), size: Number(hw.file.size) || 0 } : null,
       demo: hw.demo === true,
-      questions: (hw.questions || []).map(function (q, i) {
-        return { id: q.id || ('q' + (i + 1)), text: str(q.text, 200), topicId: q.topicId || null, suggested: q.suggested || null };
+      // questions keep their line breaks so parts like (a) and (b) stay separate
+      questions: (hw.questions || []).slice(0, 40).map(function (q, i) {
+        return { id: q.id || ('q' + (i + 1)), text: str(q.text, 600), topicId: q.topicId || null, suggested: q.suggested || null };
       }),
       createdAt: (c.homework[id] && c.homework[id].createdAt) || now(), updatedAt: now()
     };

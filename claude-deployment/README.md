@@ -24,6 +24,38 @@ School invitations are simulated. The only valid code is the fictional `DEMO-ALG
 (Northfield Demo High School, Ms. Alvarez, Algebra I). Try it at `/onboarding?invite=DEMO-ALG1`.
 School courses stay locked to their teacher; personal courses can be added or removed freely.
 
+## Course pages
+
+`course.html?c=<course id>` (`/course`) is a course's home, opened from Your courses. It is built
+around three intentions: work on homework, understand a topic, and prepare for a test. Screens are
+in-page routes: `#/homework`, `#/homework/new`, `#/topics`, `#/topic/<id>`, `#/topic/<id>/<mode>`,
+`#/test`, `#/test/<plan id>`, and `#/progress`.
+
+- `learn-assets/course-data.js`: the Algebra I pilot outline (3 units, 8 topics, written for this
+  prototype and not aligned to standards), topic search, the three ways into a topic, and the
+  fictional demo assignment for `DEMO-ALG1`. Other courses have no outline and say so.
+- `learn-assets/learning.js`: activity status, practice points, streaks, and learning evidence,
+  stored under `markov.learning.v1`.
+- `learn-assets/course.js` and `course.css`: the screens.
+
+Rules worth knowing:
+
+- Activities stop at a saved brief. The learning workspace is the next phase; its interface is
+  described at the bottom of `course-data.js`. It reports finished work through
+  `MarkovLearning.recordCompletion()`.
+- Practice points: +20 for a finished, reviewed guided activity, +30 for a finished, reviewed
+  independent check. Hints never lower points. Opening, saving, uploading, and planning earn
+  nothing. Each attempt has a stable event id, so a replayed report adds nothing.
+- A streak day is a day with at least one finished, reviewed activity, counted in the time zone
+  saved with the record. A missed day never removes points or progress.
+- Topic states come from finished activities: no evidence yet, in progress, practiced with help,
+  independent evidence, review suggested.
+- Uploaded files are not read. Only the file name is saved.
+
+Demo mode: `course.html?c=<id>&demo=1` shows a labeled banner, uses a separate key
+(`markov.learning.demo.v1`), and adds simulation controls on the progress page. Nothing in demo
+mode touches the real record, and the normal student pages have no simulation controls.
+
 Run these pages locally with any static server that supports clean URLs, for example:
 
     npx serve@14.2.4 .

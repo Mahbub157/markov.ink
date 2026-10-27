@@ -5,7 +5,6 @@
   var P = window.MarkovProfile, U = window.MarkovUI, esc = U.esc;
   var home = document.getElementById('home');
   var topbar = document.getElementById('topbar');
-  var dlgCourse = document.getElementById('dlg-course');
   var dlgProfile = document.getElementById('dlg-profile');
   var dlgJoin = document.getElementById('dlg-join');
 
@@ -78,8 +77,8 @@
           ? 'Your class with ' + esc(featured.teacher) + '. ' + esc(GOAL_START[d.goal] || '')
           : 'Your own course. ' + esc(GOAL_START[d.goal] || '')) + '</p>' +
         '<div class="begin-actions">' +
-        '<button type="button" class="btn btn-primary" data-open="' + esc(featured.id) + '">Open ' + esc(featured.title) + U.icon('right') + '</button>' +
-        '<a class="btn btn-ghost" href="whiteboard">' + U.icon('board') + 'Practice on the whiteboard</a>' +
+        '<a class="btn btn-primary" href="' + courseHref(featured.id) + '">Open ' + esc(featured.title) + U.icon('right') + '</a>' +
+        '<a class="btn btn-ghost" href="whiteboard">' + U.icon('board') + 'Whiteboard prototype</a>' +
         '</div></div>' +
         '<div class="begin-art">' + (isSchool ? '<span class="tag school">' + U.icon('school') + 'School course</span>' : '<span class="tag">' + U.icon('user') + 'Your course</span>') +
         U.glyph(featured.glyph) + '</div>' +
@@ -97,10 +96,10 @@
             '<div class="class-meta">' + (c.section ? esc(c.section) + ' &middot; ' : '') + 'Teacher <b>' + esc(c.teacher) + '</b></div>' +
             '<div class="class-meta">' + esc(d.school ? d.school.name : '') + '</div>' +
             '<div class="row"><span class="tag school">' + U.icon('lock') + 'School course</span>' + (d.school && d.school.demo ? '<span class="badge-demo">Fictional demo</span>' : '') +
-            '<button type="button" class="btn btn-quiet" data-open="' + esc(c.id) + '">Open course' + U.icon('right') + '</button></div>' +
+            '<a class="btn btn-quiet" href="' + courseHref(c.id) + '">Open course' + U.icon('right') + '</a></div>' +
             '</div>' +
             '<div class="class-work"><h4 class="kicker">Class work</h4>' +
-            '<div class="empty-work">' + U.icon('tray') + '<p style="margin:0">Nothing assigned yet. When ' + esc(c.teacher) + ' posts work for ' + esc(c.title) + ', it will show up here.</p></div>' +
+            classWorkHtml(c) +
             '</div></article>';
         }).join('') + '</div>';
     }
@@ -109,10 +108,10 @@
     html += '<div class="section-head"><h2>' + (school.length ? 'Your own courses' : 'Your courses') + '</h2><p>' + (personal.length ? 'Only you manage these.' : '') + '</p></div>';
     if (personal.length) {
       html += '<ul class="shelf">' + personal.map(function (c) {
-        return '<li data-area="' + c.area + '"><button type="button" class="shelf-row" data-open="' + esc(c.id) + '">' +
+        return '<li data-area="' + c.area + '"><a class="shelf-row" href="' + courseHref(c.id) + '">' +
           '<span class="shelf-icon">' + U.glyph(c.glyph) + '</span>' +
           '<span><span class="shelf-title">' + esc(c.title) + '</span><br><span class="shelf-sub">' + esc(c.custom ? 'Added by you' : P.AREAS[c.area].label) + '</span></span>' +
-          '<span class="shelf-go">Open' + U.icon('right') + '</span></button></li>';
+          '<span class="shelf-go">Open' + U.icon('right') + '</span></a></li>';
       }).join('') + '</ul>';
     } else {
       html += '<p class="home-sub" style="margin:0">No personal courses yet. Add one whenever you are studying something on your own.</p>';
@@ -130,9 +129,6 @@
     html += '</div>';
     home.innerHTML = html;
 
-    home.querySelectorAll('[data-open]').forEach(function (b) {
-      b.addEventListener('click', function () { openCourse(b.getAttribute('data-open'), b); });
-    });
     var j = document.getElementById('btn-join');
     if (j) j.addEventListener('click', openJoin);
     document.getElementById('btn-reset').addEventListener('click', resetSetup);
@@ -165,7 +161,7 @@
   function closeDialog(dlg) {
     if (typeof dlg.close === 'function') dlg.close(); else dlg.removeAttribute('open');
   }
-  [dlgCourse, dlgProfile, dlgJoin].forEach(function (dlg) {
+  [dlgProfile, dlgJoin].forEach(function (dlg) {
     dlg.addEventListener('close', function () { if (lastTrigger && document.body.contains(lastTrigger)) lastTrigger.focus(); });
     dlg.addEventListener('click', function (e) {
       if (e.target === dlg) closeDialog(dlg); // backdrop
@@ -177,20 +173,15 @@
     return '<div class="sheet-head"><h2 id="' + id + '">' + title + '</h2><button type="button" class="sheet-close" aria-label="Close">' + U.icon('close') + '</button></div>';
   }
 
-  function openCourse(id, trigger) {
-    var c = profile.courses.filter(function (x) { return x.id === id; })[0];
-    if (!c) return;
-    var isSchool = c.origin === 'school';
-    dlgCourse.setAttribute('data-area', c.area);
-    dlgCourse.innerHTML = sheetHead('dlg-course-title', esc(c.title)) +
-      '<div class="sheet-body">' +
-      '<p>' + (isSchool ? '<span class="tag school">' + U.icon('lock') + 'School course &middot; ' + esc(c.teacher) + '</span>' : '<span class="tag">' + U.icon('user') + (c.custom ? 'Added by you' : 'Your course') + '</span>') + '</p>' +
-      '<div class="note">' + U.glyph(c.glyph, 'icon') + '<p><strong>The course experience is coming next.</strong> ' +
-      (isSchool ? 'Class work from ' + esc(c.teacher) + ' will appear here once teacher connections are live.' : 'This is where your work for ' + esc(c.title) + ' will live.') +
-      ' For now, the whiteboard is open for practice.</p></div>' +
-      '<div class="sheet-actions"><a class="btn btn-primary" href="whiteboard" autofocus>' + U.icon('board') + 'Practice on the whiteboard</a>' +
-      '<button type="button" class="btn btn-ghost" data-close>Close</button></div></div>';
-    openDialog(dlgCourse, trigger);
+  function courseHref(id) { return 'course?c=' + encodeURIComponent(id); }
+
+  // Class work shown on the class card. Only the fictional demo class has any.
+  function classWorkHtml(c) {
+    var list = (window.MarkovCourse && profile.school) ? window.MarkovCourse.assignmentsFor(profile.school.code) : [];
+    if (!list.length) return '<div class="empty-work">' + U.icon('tray') + '<p style="margin:0">Nothing assigned yet. When ' + esc(c.teacher) + ' posts work for ' + esc(c.title) + ', it will show up here.</p></div>';
+    return list.map(function (a) {
+      return '<a class="empty-work" style="text-decoration:none;color:inherit" href="' + courseHref(c.id) + '#/homework/a/' + encodeURIComponent(a.id) + '">' + U.icon('tray') + '<span><b style="color:var(--ink)">' + esc(a.title) + '</b><br>' + a.questions.length + ' questions' + (a.demo ? ' · fictional demo' : '') + '</span></a>';
+    }).join('');
   }
 
   function openProfile() {

@@ -624,8 +624,10 @@
 
   // The whiteboard opens on one question of a saved classwork.
   var boardHwId = null;
-  function boardHref(hwId, index) {
-    return 'whiteboard-v2?c=' + encodeURIComponent(courseId) + (L.DEMO ? '&demo=1' : '') + '&hw=' + encodeURIComponent(hwId) + '&q=' + (index || 0);
+  function boardHref(hwId, index) { return actHref('hw:' + hwId, index); }
+  // Every activity runs on the whiteboard; it finds its questions from the activity id.
+  function actHref(actId, index) {
+    return 'whiteboard-v2?c=' + encodeURIComponent(courseId) + (L.DEMO ? '&demo=1' : '') + '&act=' + encodeURIComponent(actId) + (index ? '&q=' + index : '');
   }
 
   function viewHomeworkBrief(id) {
@@ -660,7 +662,7 @@
     return '<aside class="brief-side" aria-label="Status and actions"><span class="kicker">' + esc(kicker) + '</span><h3>' + esc(line) + '</h3>' +
       '<p style="margin-top:10px">' + statusChip(act.status) + '</p>' +
       (act.position ? '<p>Saved place: question ' + esc(String(act.position.index + 1)) + '</p>' : '') +
-      '<button type="button" class="btn btn-primary" data-start="' + esc(act.id) + '">' + (act.status === 'started' || act.status === 'paused' ? 'Continue' : 'Start') + U.icon('right') + '</button>' +
+      '<button type="button" class="btn btn-primary" data-start="' + esc(act.id) + '">' + (act.status === 'started' || act.status === 'paused' ? 'Continue' : act.status === 'finished' ? 'Do it again' : 'Start') + U.icon('right') + '</button>' +
       (extra || '') +
       '<p class="pts-rule">Finish and review this ' + (kind === 'independent' ? 'check' : 'activity') + ': +' + pts + ' practice points, once. Hints never lower that.</p></aside>';
   }
@@ -670,8 +672,8 @@
     if (b) b.addEventListener('click', function () {
       L.setResume(courseId, routeForActivity(act), act.title, act.status);
       var w = act.type === 'homework' ? L.course(courseId).homework[act.homeworkId] : null;
-      if (w && w.questions.length) { location.href = boardHref(act.homeworkId, act.position ? act.position.index : 0); return; }
-      workspaceNotice(act.title, b);
+      if (act.type === 'homework' && !(w && w.questions.length)) { openSheet('Add questions first', '<p>This classwork has no questions yet. Add them, then work through them on the board.</p><div class="sheet-actions"><a class="btn btn-primary" href="' + h('/homework/edit/' + act.homeworkId) + '" data-close>Add questions</a><button type="button" class="btn btn-ghost" data-close>Not now</button></div>', b); return; }
+      location.href = actHref(act.id, act.status === 'finished' ? 0 : (act.position ? act.position.index : 0));
     });
   }
 
@@ -720,7 +722,7 @@
       var st = document.getElementById('asg-start'); if (st) st.focus();
     });
     var go = document.getElementById('asg-start');
-    if (go) go.addEventListener('click', function () { L.setResume(courseId, '/homework/a/' + a.id, a.title, act.status); workspaceNotice(a.title, go); });
+    if (go) go.addEventListener('click', function () { L.setResume(courseId, '/homework/a/' + a.id, a.title, act.status); location.href = actHref(actId, act.position && act.status !== 'finished' ? act.position.index : 0); });
   }
 
   /* ---------- Topics ---------- */
@@ -803,15 +805,22 @@
     var side;
     if (act) side = briefSide(M.title, act, 'About ' + M.minutes + ' minutes', M.kind, '');
     else side = '<aside class="brief-side" aria-label="Status and actions"><span class="kicker">' + esc(M.title) + '</span><h3>About ' + M.minutes + ' minutes</h3><p>Not saved yet.</p>' +
-      '<button type="button" class="btn btn-primary" id="save-act">Save to my plan</button>' +
+      '<button type="button" class="btn btn-primary" id="start-act">Start' + U.icon('right') + '</button>' +
+      '<button type="button" class="btn btn-ghost" id="save-act">Save for later</button>' +
       '<p class="pts-rule">Saving earns no points. Finish and review this ' + (M.kind === 'independent' ? 'check' : 'activity') + ': +' + (M.kind === 'independent' ? L.RULES.independentCompleteReviewed : L.RULES.guidedCompleteReviewed) + ' practice points, once. Hints never lower that.</p></aside>';
     mount(crumbs(base().concat([['Topics', h('/topics')], [t.title, h('/topic/' + t.id)], [M.title]])) +
       '<span class="kicker">' + esc(t.title) + '</span><h1 class="page-title">' + esc(M.title) + '</h1>' +
       '<div class="brief"><div class="brief-main">' + main + '</div>' + side + '</div>');
-    var sv = document.getElementById('save-act');
-    if (sv) sv.addEventListener('click', function () {
+    function prep() {
       var a = L.prepareActivity(courseId, { id: actId, type: 'topic', mode: mode, kind: M.kind, topicId: t.id, title: M.title + ': ' + t.title });
       L.setResume(courseId, '/topic/' + t.id + '/' + mode, a.title, 'ready');
+      return a;
+    }
+    var go = document.getElementById('start-act');
+    if (go) go.addEventListener('click', function () { prep(); location.href = actHref(actId); });
+    var sv = document.getElementById('save-act');
+    if (sv) sv.addEventListener('click', function () {
+      prep();
       viewActivityBrief(topicId, mode);
       var st = view.querySelector('[data-start]'); if (st) st.focus();
     });
@@ -950,7 +959,7 @@
         var s = plan.steps.filter(function (x) { return x.id === b.getAttribute('data-step'); })[0];
         var a = L.prepareActivity(courseId, { id: s.id, type: 'test-step', kind: s.kind, planId: p.id, topicId: s.topicId || null, title: s.title + ' (' + p.name + ')' });
         L.setResume(courseId, '/test/' + p.id, 'Test plan: ' + p.name, a.status);
-        workspaceNotice(a.title, b);
+        location.href = actHref(a.id);
       });
     });
   }

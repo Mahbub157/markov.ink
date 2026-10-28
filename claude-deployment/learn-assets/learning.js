@@ -210,6 +210,13 @@
       success: e.success === true, at: at, day: dayKey(at), demo: DEMO
     };
     data.events.push(ev);
+    // A set that covers several topics also leaves one result per topic, so each
+    // topic gets its own evidence. These never add points or practice days.
+    (Array.isArray(e.topicResults) ? e.topicResults : []).slice(0, 20).forEach(function (r) {
+      if (!r || !r.topicId) return;
+      data.events.push({ id: id + ':' + r.topicId, type: 'topic_result', courseId: e.courseId, activityId: e.activityId, attemptId: String(e.attemptId),
+        topicId: r.topicId, kind: ev.kind, reviewed: ev.reviewed, hintsUsed: 0, success: r.success === true, at: at, day: ev.day, demo: DEMO });
+    });
     var pts = pointsFor(ev);
     if (pts > 0 && !data.rewards.some(function (r) { return r.eventId === id; })) {
       data.rewards.push({ eventId: id, points: pts, at: at, day: ev.day });
@@ -263,7 +270,7 @@
   };
 
   function topicEvidence(courseId, topicId) {
-    var evs = data.events.filter(function (e) { return e.courseId === courseId && e.topicId === topicId && e.type === 'activity_completed' && e.reviewed; })
+    var evs = data.events.filter(function (e) { return e.courseId === courseId && e.topicId === topicId && (e.type === 'activity_completed' || e.type === 'topic_result') && e.reviewed; })
       .sort(function (a, b) { return a.at < b.at ? -1 : 1; });
     var indep = evs.filter(function (e) { return e.kind === 'independent'; });
     var state = 'none';

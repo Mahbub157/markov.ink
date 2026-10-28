@@ -67,6 +67,19 @@ Rules worth knowing:
   10 minutes per visitor. Needs `ANTHROPIC_API_KEY` and the functions in this folder to be live
   (`npm install` here pins `@anthropic-ai/sdk`).
 
+- Whiteboard v2 (`whiteboard-v2.html`, `learn-assets/board.js`, `board-tutor.js`, `board.css`):
+  one board with a floating, collapsible tool panel (pen, highlighter, eraser, shapes, text,
+  undo). The tutor has its own blue layer and a labeled cursor: it circles steps, ticks correct
+  ones, writes short notes, and draws small diagrams (dots, number line, balance, triangle, plot,
+  fraction bar), and never edits the student's ink. It talks in one line of subtitles, read
+  aloud when voice is on; the mic uses the browser's speech recognition. "I need help" opens
+  focus mode: the board dims, one step is lit, and the tutor asks one question with Show me,
+  Still stuck, and I fixed it. Homework questions open here ("Work on the board", Start and
+  Continue), and the saved place follows the question. With a key, a picture of the board goes
+  to `/api/tutor` and Claude answers with JSON actions; without one, demo replies give general
+  hints and say they cannot read handwriting. The menu has a 30 second demo. Boards are saved
+  in `markov.board.v1`; the previous whiteboard is unchanged at `whiteboard.html`.
+
 Demo mode: `course.html?c=<id>&demo=1` shows a labeled banner, uses a separate key
 (`markov.learning.demo.v1`), and adds simulation controls on the progress page. Nothing in demo
 mode touches the real record, and the normal student pages have no simulation controls.

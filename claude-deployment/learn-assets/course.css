@@ -235,6 +235,8 @@
 .qmeta { margin-top: 10px; }
 .qmeta .tag { text-decoration: none; }
 .qmeta .tag .dot { width: 10px; height: 10px; border-width: 2px; }
+.qmeta .tag-board { color: var(--royal) !important; gap: 6px; }
+.qmeta .tag-board .icon { width: 16px; height: 16px; }
 
 /* ---------- Assignment: a letter, not a card ---------- */
 

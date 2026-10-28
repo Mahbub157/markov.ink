@@ -112,7 +112,7 @@
     topbar.innerHTML = U.wordmark() +
       '<a class="toplink" href="learn">' + U.icon('left') + '<span>Your courses</span></a>' +
       '<span class="spacer"></span>' +
-      '<a class="toplink" href="whiteboard">' + U.icon('board') + '<span>Whiteboard prototype</span></a>';
+      '<a class="toplink" href="whiteboard-v2' + (courseId ? '?c=' + encodeURIComponent(courseId) + (L.DEMO ? '&demo=1' : '') : '') + '">' + U.icon('board') + '<span>Whiteboard</span></a>';
     if (L.DEMO) {
       document.getElementById('demo-banner').innerHTML = '<div class="demo-banner" role="note">' + U.icon('lock') + 'Demo mode: simulated activity, kept separate from your real record.</div>';
     }
@@ -618,7 +618,14 @@
       return /^\([a-hiv]{1,3}\)/.test(line) ? '<span class="qline part">' + esc(line) + '</span>' : '<span class="qline">' + esc(line) + '</span>';
     }).join('');
     return '<li class="qbox"><span class="qnum" aria-hidden="true">' + (i + 1) + '</span><div class="qbody"><div class="qtext-view">' + body + '</div>' +
-      '<div class="qmeta">' + (q.topicId ? '<a class="tag" href="' + h('/topic/' + q.topicId) + '">' + dot(L.topicEvidence(courseId, q.topicId).state) + esc(topicTitle(q.topicId)) + '</a>' : '<span class="tag">Not sure yet</span>') + '</div></div></li>';
+      '<div class="qmeta">' + (q.topicId ? '<a class="tag" href="' + h('/topic/' + q.topicId) + '">' + dot(L.topicEvidence(courseId, q.topicId).state) + esc(topicTitle(q.topicId)) + '</a>' : '<span class="tag">Not sure yet</span>') +
+      (boardHwId ? '<a class="tag tag-board" href="' + boardHref(boardHwId, i) + '">' + U.icon('board') + 'Work on the board</a>' : '') + '</div></div></li>';
+  }
+
+  // The whiteboard opens on one question of a saved classwork.
+  var boardHwId = null;
+  function boardHref(hwId, index) {
+    return 'whiteboard-v2?c=' + encodeURIComponent(courseId) + (L.DEMO ? '&demo=1' : '') + '&hw=' + encodeURIComponent(hwId) + '&q=' + (index || 0);
   }
 
   function viewHomeworkBrief(id) {
@@ -634,7 +641,9 @@
     var main = '<section><h2>Source</h2><p style="margin:0;color:var(--ink-2)">' + src + '</p>' +
       (Object.keys(topics).length ? '<div class="prereqs" style="margin-top:12px">' + Object.keys(topics).map(function (t) { return '<a class="prereq" href="' + h('/topic/' + t) + '">' + esc(topicTitle(t)) + ' <span style="color:var(--muted);font-weight:500">' + topics[t] + '</span></a>'; }).join('') + '</div>' : '') + '</section>';
     if (w.questions.length) {
+      boardHwId = id;
       main += '<section><h2>' + w.questions.length + ' question' + (w.questions.length === 1 ? '' : 's') + '</h2><ol class="qboxes">' + w.questions.map(questionBox).join('') + '</ol></section>';
+      boardHwId = null;
     } else {
       main += '<section><h2>Questions</h2><p style="margin:0;color:var(--soft)">No questions yet. Edit this classwork to add them, so the tutor knows what you are working on.</p></section>';
     }
@@ -660,6 +669,8 @@
     var b = view.querySelector('[data-start]');
     if (b) b.addEventListener('click', function () {
       L.setResume(courseId, routeForActivity(act), act.title, act.status);
+      var w = act.type === 'homework' ? L.course(courseId).homework[act.homeworkId] : null;
+      if (w && w.questions.length) { location.href = boardHref(act.homeworkId, act.position ? act.position.index : 0); return; }
       workspaceNotice(act.title, b);
     });
   }

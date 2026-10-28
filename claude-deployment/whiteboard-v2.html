@@ -20,6 +20,7 @@
   <div class="bb-q-nav">
     <button type="button" class="bb-icon" id="q-prev" aria-label="Previous question"></button>
     <span class="bb-q-count" id="q-count">Free practice</span>
+    <span class="bb-dots" id="q-dots" role="group" aria-label="Questions in this set" hidden></span>
     <button type="button" class="bb-icon" id="q-next" aria-label="Next question"></button>
   </div>
   <span class="bb-spacer"></span>
@@ -34,6 +35,12 @@
 <main class="bb-stage" id="stage">
   <canvas id="ink" class="bb-ink" role="img" aria-label="Your work on the board. Use Type instead in the conversation to write without drawing."></canvas>
   <svg id="tutor-layer" class="bb-tutor-layer" aria-hidden="true"></svg>
+  <div id="widgets" class="bw-layer"></div>
+  <div id="steps-layer" class="bb-steps"></div>
+  <div id="sel-box" class="bb-sel" hidden><button type="button" class="bb-chip small" id="sel-del"></button></div>
+  <div id="ask-chip" class="bb-ask" hidden></div>
+  <div class="bb-pop bb-step-pop" id="step-pop" role="menu" aria-label="Ask about this line" hidden></div>
+  <div id="replay-bar" class="bb-replay" role="group" aria-label="Replay controls" hidden></div>
   <div id="spot" class="bb-spot" hidden></div>
   <div id="cursor" class="bb-cursor" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 3l7 17 2.5-7L21 10.5Z" fill="currentColor"/></svg><span>Tutor</span></div>
 
@@ -74,6 +81,7 @@
 <script src="learn-assets/learning.js"></script>
 <script src="learn-assets/problems.js"></script>
 <script src="learn-assets/board-tutor.js"></script>
+<script src="learn-assets/board-widgets.js"></script>
 <script src="learn-assets/board.js"></script>
 </body>
 </html>

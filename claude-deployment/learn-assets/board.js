@@ -38,6 +38,15 @@
     play: '<path d="M7 5l12 7-12 7Z"/>', eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
     speaker: '<path d="M4 9h4l5-4v14l-5-4H4Z"/><path d="M17 9a4 4 0 0 1 0 6"/>', trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
     download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>', keys: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10"/>',
+    pause: '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
+    lasso: '<path d="M12 4c4.6 0 8 2.4 8 5.4S16.6 15 12 15 4 12.4 4 9.4 7.4 4 12 4Z" stroke-dasharray="3 2.5"/><path d="M7.5 13.5c-1 2.2.2 4.2 2.4 4.2 1.6 0 2.1 1.4 1.4 2.8"/>',
+    flag: '<path d="M5 21V4M5 4h11l-2.5 4L16 12H5"/>',
+    replay: '<path d="M4 12a8 8 0 1 0 2.6-5.9"/><path d="M4 4v4.5h4.5"/>',
+    insert: '<rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M12 8v8M8 12h8"/>',
+    balance: '<path d="M12 4v15M7 19h10M4 8h16"/><path d="M7 8l-3 6h6ZM17 8l-3 6h6Z"/>',
+    terms: '<path d="M3 12h5M5.5 9.5v5M11 10.5h2M11 13.5h2M16 12h5"/>',
+    graph: '<path d="M4 4v16h16"/><path d="M7 16l10-9"/>',
+    frac: '<rect x="3" y="8" width="18" height="8" rx="1.5"/><path d="M9 8v8M15 8v8"/>',
     face: '<circle cx="12" cy="12" r="9"/><path d="M8.5 14a4 4 0 0 0 7 0M9 9.5h.01M15 9.5h.01"/>', minus: '<path d="M6 12h12"/>', board: '<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20l4-4 4 4"/>'
   };
   function ic(n) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + (IC[n] || '') + '</svg>'; }
@@ -119,25 +128,33 @@
   function boardKey() { return (courseId || 'free') + '|' + (act ? act.id + (act.type === 'homework' ? '' : '|' + attempt.id) : '') + '|' + currentQ().slice(0, 120); }
   function readStore() { try { return JSON.parse(localStorage.getItem(STORE) || '{}') || {}; } catch (e) { return {}; } }
   var saveTimer = null;
+  // Save right away when the page closes, so a quick reload never loses the last change.
+  window.addEventListener('pagehide', function () { if (saveTimer) { clearTimeout(saveTimer); saveNow(); } });
   function saveSoon() {
     if (demo.on) return;
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(function () {
+    saveTimer = setTimeout(saveNow, 400);
+  }
+  function saveNow() {
+    saveTimer = null;
+    if (demo.on) return;
+    (function () {
       var all = readStore();
-      all[boardKey()] = { objs: objs, marks: marks, t: Date.now() };
+      all[boardKey()] = { objs: objs, marks: marks, widgets: widgets, t: Date.now() };
       var keys = Object.keys(all).sort(function (a, b) { return all[b].t - all[a].t; });
       keys.slice(30).forEach(function (k) { delete all[k]; });
       try { localStorage.setItem(STORE, JSON.stringify(all)); } catch (e) {
         try { delete all[keys[keys.length - 1]]; localStorage.setItem(STORE, JSON.stringify(all)); } catch (x) {}
       }
-    }, 400);
+    })();
   }
   function loadBoard() {
     var b = readStore()[boardKey()];
     objs = b && Array.isArray(b.objs) ? b.objs : [];
     marks = b && Array.isArray(b.marks) ? b.marks : [];
-    undoStack = []; redoStack = [];
-    redraw(); renderMarks(false); updateUndo();
+    widgets = b && Array.isArray(b.widgets) ? b.widgets : [];
+    undoStack = []; redoStack = []; clearSel();
+    redraw(); renderMarks(false); updateUndo(); mountWidgets(); stepsSoon();
   }
 
   /* ---------- state ---------- */
@@ -196,6 +213,11 @@
         }
       }
       c.stroke();
+    } else if (o.type === 'stamp') {
+      c.fillStyle = '#FFF3E0'; c.strokeStyle = '#D97706'; c.lineWidth = 2;
+      c.beginPath(); c.arc(o.x + 13, o.y + 13, 12, 0, Math.PI * 2); c.fill(); c.stroke();
+      c.fillStyle = '#B45309'; c.font = '700 16px Inter, system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText('?', o.x + 13, o.y + 14);
     } else if (o.type === 'text') {
       c.fillStyle = o.color; c.textBaseline = 'top';
       c.font = textFont(o);
@@ -213,6 +235,7 @@
   }
 
   function bbox(o) {
+    if (o.type === 'stamp') return { x: o.x, y: o.y, w: 26, h: 26 };
     if (o.type === 'stroke') {
       var x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
       o.pts.forEach(function (p) { x1 = Math.min(x1, p[0]); y1 = Math.min(y1, p[1]); x2 = Math.max(x2, p[0]); y2 = Math.max(y2, p[1]); });
@@ -259,8 +282,8 @@
   /* ---------- history ---------- */
   function snapshot() { return JSON.stringify(objs); }
   function pushUndo(prev) { undoStack.push(prev); if (undoStack.length > 80) undoStack.shift(); redoStack = []; updateUndo(); }
-  function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); objs = JSON.parse(undoStack.pop()); redraw(); updateUndo(); saveSoon(); }
-  function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); objs = JSON.parse(redoStack.pop()); redraw(); updateUndo(); saveSoon(); }
+  function undo() { if (!undoStack.length) return; clearSel(); redoStack.push(snapshot()); objs = JSON.parse(undoStack.pop()); redraw(); updateUndo(); saveSoon(); stepsSoon(); }
+  function redo() { if (!redoStack.length) return; clearSel(); undoStack.push(snapshot()); objs = JSON.parse(redoStack.pop()); redraw(); updateUndo(); saveSoon(); stepsSoon(); }
   function updateUndo() {
     var u = $('t-undo'), r = $('t-redo');
     if (u) u.disabled = !undoStack.length;
@@ -280,11 +303,18 @@
     var p = pos(e);
     if (tool === 'text') { openTextbox(p[0], p[1]); e.preventDefault(); return; }
     canvas.setPointerCapture(e.pointerId);
+    $('steps-layer').hidden = true; $('ask-chip').hidden = true;
+    if (tool === 'lasso') {
+      var sr0 = selRect();
+      if (sr0 && p[0] > sr0.x - 8 && p[0] < sr0.x + sr0.w + 8 && p[1] > sr0.y - 8 && p[1] < sr0.y + sr0.h + 8) moving = { x: p[0], y: p[1], prev: snapshot(), moved: false };
+      else { clearSel(); lassoPts = [p]; }
+      e.preventDefault(); return;
+    }
     startX = p[0]; startY = p[1];
     if (tool === 'pen' || tool === 'hl') {
-      cur = { type: 'stroke', tool: tool, color: color, size: tool === 'hl' ? size * 5 + 8 : size, pressure: e.pointerType === 'pen', pts: [p] };
+      cur = { type: 'stroke', tool: tool, color: color, size: tool === 'hl' ? size * 5 + 8 : size, pressure: e.pointerType === 'pen', pts: [p], t: Date.now() };
     } else if (tool === 'shape') {
-      cur = { type: 'shape', kind: shapeKind, color: color, size: size, x1: p[0], y1: p[1], x2: p[0], y2: p[1] };
+      cur = { type: 'shape', kind: shapeKind, color: color, size: size, x1: p[0], y1: p[1], x2: p[0], y2: p[1], t: Date.now() };
     } else if (tool === 'eraser') {
       erasing = { prev: snapshot(), changed: false };
       eraseAt(p[0], p[1]);
@@ -292,6 +322,17 @@
     e.preventDefault();
   });
   canvas.addEventListener('pointermove', function (e) {
+    if (moving) {
+      var mq = pos(e), mdx = mq[0] - moving.x, mdy = mq[1] - moving.y;
+      if (mdx || mdy) { sel.forEach(function (o) { moveObj(o, mdx, mdy); }); moving.x = mq[0]; moving.y = mq[1]; moving.moved = true; redraw(); showSel(); }
+      return;
+    }
+    if (lassoPts) {
+      lassoPts.push(pos(e)); redraw();
+      ctx.save(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.setLineDash([5, 5]); ctx.strokeStyle = '#2563EB'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); lassoPts.forEach(function (q, i) { if (i) ctx.lineTo(q[0], q[1]); else ctx.moveTo(q[0], q[1]); }); ctx.stroke(); ctx.restore();
+      return;
+    }
     if (!cur && !erasing) return;
     var evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
     if (!evs.length) evs = [e];
@@ -313,17 +354,38 @@
     }
   });
   function endStroke() {
+    if (moving) {
+      if (moving.moved) { pushUndo(moving.prev); saveSoon(); changed(); }
+      moving = null; stepsSoon(); return;
+    }
+    if (lassoPts) {
+      var poly = lassoPts; lassoPts = null;
+      sel = poly.length > 4 ? objs.filter(function (o) { var c = bbox(o); return pointIn(poly, c.x + c.w / 2, c.y + c.h / 2); }) : [];
+      redraw();
+      if (sel.length) { showSel(); subtitle('Drag the selection to move it, or press Delete.', 'tutor'); } else clearSel();
+      stepsSoon(); return;
+    }
     if (erasing) {
       if (erasing.changed) { pushUndo(erasing.prev); saveSoon(); changed(); }
-      erasing = null; return;
+      erasing = null; stepsSoon(); return;
     }
-    if (!cur) return;
+    if (!cur) { stepsSoon(); return; }
+    var scrib = cur.type === 'stroke' ? scribbleHits(cur) : null;
+    if (scrib) {
+      var prevS = snapshot();
+      objs = objs.filter(function (o) { return scrib.indexOf(o) < 0; });
+      pushUndo(prevS); saveSoon(); changed(); cur = null; redraw(); stepsSoon();
+      subtitle('Scribbled out. Undo brings it back.', 'tutor');
+      return;
+    }
     var keep = cur.type === 'stroke' || Math.hypot(cur.x2 - cur.x1, cur.y2 - cur.y1) > 6;
     if (keep) {
       if (cur.type === 'stroke' && cur.pts.length > 2) cur.pts = cur.pts.map(function (p) { return [Math.round(p[0] * 10) / 10, Math.round(p[1] * 10) / 10, Math.round((p[2] || 0.5) * 100) / 100]; });
       var prev = snapshot(); objs.push(cur); pushUndo(prev); saveSoon(); changed();
+      var loop = !noHints && !demo.on && cur.type === 'stroke' ? loopAround(cur) : null;
+      if (loop) offerCircleAsk(loop);
     }
-    cur = null; redraw();
+    cur = null; redraw(); stepsSoon();
   }
   canvas.addEventListener('pointerup', endStroke);
   canvas.addEventListener('pointercancel', endStroke);
@@ -354,7 +416,7 @@
     box.hidden = true;
     if (v && textAt) {
       var prev = snapshot();
-      objs.push({ type: 'text', text: v.slice(0, 120), x: textAt.x, y: textAt.y - 10, color: color, size: 22 });
+      objs.push({ type: 'text', text: v.slice(0, 120), x: textAt.x, y: textAt.y - 10, color: color, size: 22, t: Date.now() });
       pushUndo(prev); redraw(); saveSoon(); changed();
     }
     textAt = null;
@@ -374,7 +436,7 @@
   });
 
   /* ---------- tool panel ---------- */
-  var TOOLS = [['pen', 'Pen', 'P'], ['hl', 'Highlighter', 'H'], ['eraser', 'Eraser', 'E'], ['shape', 'Shapes', 'S'], ['text', 'Type text', 'T']];
+  var TOOLS = [['pen', 'Pen', 'P'], ['hl', 'Highlighter', 'H'], ['eraser', 'Eraser', 'E'], ['lasso', 'Select and move', 'V'], ['shape', 'Shapes', 'S'], ['text', 'Type text', 'T']];
   function renderTools() {
     var closed = settings.toolsClosed;
     $('tools').className = 'bb-tools' + (closed ? ' closed' : '') + (focus.on ? ' dimmed' : '');
@@ -386,6 +448,7 @@
       }).join('') +
       '<div class="sep t" aria-hidden="true"></div>' +
       '<button type="button" class="tool t" id="t-style" aria-label="Color and size" aria-haspopup="true" title="Color and size"><span class="swatch" style="background:' + color + '"></span></button>' +
+      '<button type="button" class="tool t" id="t-insert" aria-label="Add a tool: balance, terms, graph, or fraction bar" aria-haspopup="true" title="Add an interactive tool">' + ic('insert') + '</button>' +
       '<div class="sep t" aria-hidden="true"></div>' +
       '<button type="button" class="tool t" id="t-undo" aria-label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)">' + ic('undo') + '</button>' +
       '<button type="button" class="tool t" id="t-redo" aria-label="Redo (Ctrl+Shift+Z)" title="Redo (Ctrl+Shift+Z)">' + ic('redo') + '</button>';
@@ -398,12 +461,13 @@
     if (b.id === 't-undo') return undo();
     if (b.id === 't-redo') return redo();
     if (b.id === 't-style') return togglePop('style', b);
+    if (b.id === 't-insert') return togglePop('insert', b);
     var t = b.getAttribute('data-tool');
     if (t === 'shape' && tool === 'shape') return togglePop('shape', b);
     if (t) { setTool(t); if (t === 'shape') togglePop('shape', b); }
   });
   function setTool(t) {
-    tool = t; closePops(); commitText(); renderTools();
+    tool = t; closePops(); commitText(); if (t !== 'lasso') clearSel(); renderTools(); stepsSoon();
     var b = document.querySelector('[data-tool="' + t + '"]'); if (b) b.focus({ preventScroll: true });
   }
   var popFor = null;
@@ -414,6 +478,10 @@
     if (kind === 'shape') {
       pop.innerHTML = '<h3>Shape</h3><div class="row">' + [['line', 'Line', 'L'], ['arrow', 'Arrow', 'A'], ['rect', 'Rectangle', 'R'], ['ellipse', 'Circle', 'O']].map(function (s) {
         return '<button type="button" class="opt" data-shape="' + s[0] + '" aria-pressed="' + (shapeKind === s[0]) + '" aria-label="' + s[1] + ' (' + s[2] + ')" title="' + s[1] + ' (' + s[2] + ')">' + ic(s[0]) + '</button>';
+      }).join('') + '</div>';
+    } else if (kind === 'insert') {
+      pop.innerHTML = '<h3>Add to the board</h3><div class="col">' + [['balance', 'Balance', 'Same move on both sides'], ['terms', 'Move the terms', 'Drag across the = sign'], ['graph', 'Graph', 'y = mx + b with sliders'], ['fraction', 'Fraction bar', 'Split and shade']].map(function (w) {
+        return '<button type="button" class="opt wide" data-widget="' + w[0] + '">' + ic(w[0] === 'fraction' ? 'frac' : w[0]) + '<span><b>' + w[1] + '</b><small>' + w[2] + '</small></span></button>';
       }).join('') + '</div>';
     } else {
       pop.innerHTML = '<h3>Color</h3><div class="row">' + COLORS.map(function (c) {
@@ -430,6 +498,7 @@
   }
   $('tool-pop').addEventListener('click', function (e) {
     var b = e.target.closest('button'); if (!b) return;
+    if (b.hasAttribute('data-widget')) { closePops(); if (window.MarkovWidgets) window.MarkovWidgets.add(b.getAttribute('data-widget')); return; }
     if (b.hasAttribute('data-shape')) { shapeKind = b.getAttribute('data-shape'); tool = 'shape'; }
     if (b.hasAttribute('data-color')) { color = b.getAttribute('data-color'); if (tool === 'eraser') tool = 'pen'; }
     if (b.hasAttribute('data-size')) { size = +b.getAttribute('data-size'); }
@@ -437,7 +506,7 @@
     var back = document.querySelector(popFor === 'shape' ? '[data-tool="shape"]' : '#t-style'); if (back) back.focus();
   });
   function closePops() {
-    $('tool-pop').hidden = true;
+    $('tool-pop').hidden = true; $('step-pop').hidden = true;
     var m = $('menu'); if (!m.hidden) { m.hidden = true; $('menu-btn').setAttribute('aria-expanded', 'false'); }
   }
 
@@ -556,6 +625,9 @@
       rs.push({ x: r.left - sr.left - 8, y: r.top - sr.top - 8, w: r.width + 16, h: r.height + 16 });
     });
     if (!$('chat').hidden) rs.push({ x: W - 390, y: 0, w: 390, h: H });
+    Array.prototype.forEach.call(document.querySelectorAll('.bw'), function (n) {
+      var r = n.getBoundingClientRect(); rs.push({ x: r.left - sr.left - 8, y: r.top - sr.top - 8, w: r.width + 16, h: r.height + 16 });
+    });
     return rs;
   }
   function overlaps(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
@@ -652,7 +724,7 @@
       chain = chain.then(function () {
         var m = resolve(a, anchor), c = markCenter(m);
         cursorTo(c.x, c.y);
-        return wait(650).then(function () { marks.push(m); drawMark(m, true); saveSoon(); return wait(500); });
+        return wait(650).then(function () { m.t = Date.now(); marks.push(m); drawMark(m, true); saveSoon(); return wait(500); });
       });
     });
     return chain;
@@ -719,7 +791,7 @@
     }
     // Help and check sit left of the tutor's reply; talking, practice, and the conversation sit right.
     a.innerHTML = '<div class="bb-grp left">' +
-      '<button type="button" class="bb-chip" data-act="help" aria-label="I need help">' + ic('help') + '<span class="lbl-long">I need help</span><span class="lbl-short" aria-hidden="true">Help</span></button>' +
+      '<button type="button" class="bb-chip" data-act="help" aria-label="I need help, ' + Math.min(3, qHints()) + ' of 3 hints used on this question">' + ic('help') + '<span class="lbl-long">I need help</span><span class="lbl-short" aria-hidden="true">Help</span>' + hintMeter() + '</button>' +
       '<button type="button" class="bb-chip" data-act="check">' + ic('check') + '<span>Check<span class="lbl-long"> my work</span></span></button></div><div class="bb-grp right">' +
       '<button type="button" class="bb-mic" id="mic" data-act="mic" aria-pressed="' + listening + '" aria-label="' + (listening ? 'Stop listening' : 'Talk to your tutor') + '" title="Talk to your tutor (M)">' + ic('mic') + '</button>' +
       '<button type="button" class="bb-chip practice" data-act="practice" aria-label="Practice question">' + ic('spark') + '<span class="lbl-mid">Practice</span></button>' +
@@ -788,27 +860,28 @@
     return { data: c.toDataURL('image/jpeg', 0.82).split(',')[1], w: c.width, h: c.height, scale: 1 / s };
   }
 
-  function askTutor(kind, text) {
+  function askTutor(kind, text, opts) {
     if (demo.on) return;
     if (busy && kind !== 'watch') { subtitle('One moment, still thinking about your last question.', 'tutor'); return; }
     if (busy) return;
     if (kind === 'help' && focus.on) kind = 'stuck';
     if (noHints && kind !== 'chat') { if (kind !== 'watch') subtitle('This is a check, so there are no hints yet. Finish to see how it went.', 'tutor'); return; }
     if (kind !== 'watch') { clearTimeout(watchTimer); T.voice.stopSpeaking(); }
-    if (attempt && (kind === 'help' || kind === 'stuck' || kind === 'showme')) { attempt.hints++; saveAttempt(); }
+    if (HINT_KINDS[kind]) { addQHint(); renderActions(); }
     busy = true; lastWatch = Date.now();
     if (kind !== 'watch') { setStatus('thinking', 'Tutor is thinking'); cursorTo((lastInkRect() || { x: W / 2, y: H / 3, w: 0 }).x + 40, (lastInkRect() || { y: H / 3 }).y - 26); }
     var tid = currentItem().topicId || topicId;
     var req = { kind: kind, text: text || '', question: currentQ(), topic: tid ? topicTitle(tid) : '', hints: tid && PB ? PB.hintsFor(tid) : null, noHints: noHints,
-      history: history.slice(-8), image: T.isLive() ? boardImage() : null, boardW: W, boardH: H };
+      history: history.slice(-8), image: T.isLive() ? boardImage() : null, boardW: W, boardH: H, box: opts && opts.rect ? opts.rect : null };
     if (kind !== 'watch') watchedVersion = inkVersion;
     return T.ask(req).then(function (reply) {
       busy = false;
       if (!reply) { idleStatus(); return; }
       if (kind === 'watch' && !reply.say && !(reply.actions || []).length) { idleStatus(); return; }
       if (reply.practice) { addPractice(reply.practice); }
-      var anchor = reply.focus || (focus.on ? focus.rect : null);
-      var wantFocus = kind === 'help' || kind === 'stuck' || kind === 'showme' ||
+      var anchor = reply.focus || (opts && opts.rect) || (focus.on ? focus.rect : null);
+      var wantFocus = kind === 'help' || kind === 'stuck' || kind === 'showme' || kind === 'step-hint' || kind === 'step-why' || kind === 'unsure' || kind === 'circle' ||
+        (kind === 'step-check' && reply.verdict === 'mistake') ||
         ((kind === 'check' || kind === 'watch' || kind === 'fixed') && reply.verdict === 'mistake');
       if (kind === 'fixed' && reply.verdict !== 'mistake') { exitFocus(false); }
       if (wantFocus && !focus.on) enterFocus(anchor, '');
@@ -902,6 +975,24 @@
     if (it.example) {
       body += '<ol class="qsteps">' + it.steps.map(function (st) { return '<li>' + esc(st) + '</li>'; }).join('') + '</ol>' +
         '<button type="button" class="bb-chip dark small" id="q-yourturn">Your turn' + ic('right') + '</button>';
+    } else if (it.type === 'spot') {
+      var sv = attempt && attempt.answers[qi];
+      body += '<ol class="qspot">' + it.lines.map(function (l, i) {
+        var cls = sv && sv.ok && i === it.answer ? ' right' : sv && !sv.ok && !noHints && i === +sv.v ? ' picked' : sv && noHints && i === +sv.v ? ' chosen' : '';
+        return '<li><button type="button" class="qline' + cls + '" data-spot="' + i + '" aria-pressed="' + !!(sv && +sv.v === i) + '"><span class="ln">' + (i + 1) + '</span>' + esc(mathText(l)) + '</button></li>';
+      }).join('') + '</ol><p class="qfb" id="qfb" aria-live="polite">' + spotFeedback(sv, it) + '</p>';
+    } else if (it.type === 'fill') {
+      var fv = attempt && attempt.answers[qi], vals = fv && Array.isArray(fv.vals) ? fv.vals : [], bi = 0;
+      body += '<form class="qfill" id="qfill" novalidate>' + it.steps.map(function (st) {
+        return '<div class="fl">' + st.map(function (p) {
+          if (p && typeof p === 'object') {
+            var k = bi++, mark = fv && fv.each && !noHints ? (fv.each[k] ? ' ok' : ' no') : '';
+            return '<input class="fb' + mark + '" data-b="' + k + '" aria-label="Blank ' + (k + 1) + '" autocomplete="off" spellcheck="false" value="' + esc(vals[k] || '') + '">';
+          }
+          return '<span>' + esc(mathText(p)) + '</span>';
+        }).join('') + '</div>';
+      }).join('') + '<button type="submit" class="bb-chip small">' + (noHints ? 'Save' : 'Check the blanks') + '</button></form>' +
+        '<p class="qfb" id="qfb" aria-live="polite">' + (fv ? (noHints ? 'Saved. You see how it went when you finish.' : fv.ok ? '<span class="ok">' + ic('check') + 'All correct</span>' : '<span class="no">Not yet.</span> Look again at the boxes marked in red.') : '') + '</p>';
     } else if (it.answer != null && !isExtra) {
       var saved = attempt && attempt.answers[qi];
       body += '<form class="qans" id="qans" novalidate><label class="sr-only" for="ans-in">Your answer to this question</label>' +
@@ -915,7 +1006,29 @@
     $('q-count').textContent = act || questions.length > 1 ? 'Question ' + (qi + 1) + ' of ' + questions.length : questions.length ? 'Your question' : 'Free practice';
     $('q-prev').disabled = qi <= 0; $('q-next').disabled = qi >= questions.length - 1;
     $('q-prev').hidden = $('q-next').hidden = questions.length < 2;
+    renderDots();
     document.title = (title ? title + ' · ' : '') + 'Whiteboard · Markov.ink';
+  }
+  function spotFeedback(sv, it) {
+    if (!sv) return '';
+    if (noHints) return 'Saved. You see how it went when you finish.';
+    if (sv.ok) return '<span class="ok">' + ic('check') + 'Found it.</span> ' + esc(it.explain);
+    return '<span class="no">Not that one.</span> That line follows from the one above it. Look for where the first slip happened.';
+  }
+  // What happens after any answer: feedback, a small win, and the next step.
+  function onAnswered(ok, why) {
+    renderDots();
+    if (noHints) { if (qi < questions.length - 1) setTimeout(function () { goTo(qi + 1); }, 600); else subtitle('All answers saved. Press Finish when you are ready.', 'tutor'); return; }
+    if (ok) {
+      var last = qi >= questions.length - 1 - extra;
+      celebrate($('question'));
+      var dot = $('q-dots').querySelector('[data-dot="' + qi + '"]'); celebrate(dot);
+      tutorSays(last ? 'Correct. That was the last one. Press Finish when you are ready.' : 'Correct. On to the next one when you are ready.');
+      exitFocus(false);
+      var r = lastInkRect(); if (r && !demo.on) playActions([{ type: 'tick' }], r);
+    } else if (!why) {
+      subtitle('Not yet. Look back at each step, or tap I need help.', 'tutor');
+    }
   }
   function answerFeedback(saved, it) {
     if (!saved) return '';
@@ -933,17 +1046,31 @@
     attempt.answers[qi] = { v: v.slice(0, 40), ok: res.ok, why: res.why || '' };
     saveAttempt();
     $('qfb').innerHTML = answerFeedback(attempt.answers[qi], it);
-    if (noHints) { if (qi < questions.length - 1) setTimeout(function () { goTo(qi + 1); }, 600); else subtitle('All answers saved. Press Finish when you are ready.', 'tutor'); return; }
-    if (res.ok) {
-      var last = qi >= questions.length - 1 - extra;
-      tutorSays(last ? 'Correct. That was the last one. Press Finish when you are ready.' : 'Correct. On to the next one when you are ready.');
-      if (exitFocus) exitFocus(false);
-    } else if (!res.why) {
-      subtitle('Not yet. Look back at each step, or tap I need help.', 'tutor');
-    }
+    onAnswered(res.ok, res.why);
+  });
+  $('question').addEventListener('submit', function (e) {
+    if (e.target.id !== 'qfill') return;
+    e.preventDefault();
+    var it = currentItem(), ins = Array.prototype.slice.call(e.target.querySelectorAll('input[data-b]')), vals = ins.map(function (i) { return i.value.trim(); });
+    if (vals.some(function (v) { return !v; })) { $('qfb').textContent = 'Fill every box first.'; (ins.filter(function (i) { return !i.value.trim(); })[0] || ins[0]).focus(); return; }
+    var res = PB.check(it, vals);
+    if (!res) { $('qfb').textContent = 'Use numbers in the boxes, like 12 or ' + MINUS + '3.'; return; }
+    attempt.answers[qi] = { v: vals.join(', '), vals: vals, ok: res.ok, each: res.each };
+    saveAttempt(); renderQuestion();
+    onAnswered(res.ok, false);
+    var bad = $('question').querySelector('input.fb.no'); if (bad) bad.focus();
   });
   $('question').addEventListener('click', function (e) {
     if (e.target.closest('#q-yourturn')) { goTo(qi + 1); return; }
+    var sb = e.target.closest('[data-spot]');
+    if (sb && attempt) {
+      var it = currentItem(), pick = +sb.getAttribute('data-spot'), res = PB.check(it, pick);
+      attempt.answers[qi] = { v: pick, ok: res.ok };
+      saveAttempt(); renderQuestion();
+      var again = $('question').querySelector('[data-spot="' + pick + '"]'); if (again) again.focus();
+      onAnswered(res.ok, false);
+      return;
+    }
     if (e.target.closest('#q-toggle')) { settings.qMini = !settings.qMini; saveSettings(); renderQuestion(); $('q-toggle').focus(); }
   });
   function goTo(i) {
@@ -971,6 +1098,8 @@
       '<button type="button" role="menuitem" data-m="clear">' + ic('trash') + (clearArmed ? 'Tap again to clear your work' : 'Clear my work') + '</button>' +
       '<hr>' +
       '<button type="button" role="menuitem" data-m="download">' + ic('download') + 'Save the board as an image</button>' +
+      '<button type="button" role="menuitem" data-m="replay">' + ic('replay') + 'Replay this board</button>' +
+      '<button type="button" role="menuitemcheckbox" aria-checked="' + (settings.scribble !== false) + '" data-m="scribble">' + ic('eraser') + 'Scribble over ink to erase' + onoff(settings.scribble !== false) + '</button>' +
       '<button type="button" role="menuitem" data-m="keys">' + ic('keys') + 'Keyboard shortcuts</button>';
   }
   $('menu-btn').innerHTML = ic('more');
@@ -999,7 +1128,9 @@
     if (m === 'clear-marks') { marks = []; renderMarks(); saveSoon(); }
     if (m === 'clear') { var prev = snapshot(); objs = []; pushUndo(prev); redraw(); saveSoon(); exitFocus(false); subtitle('Your work is cleared. Undo brings it back.', 'tutor'); }
     if (m === 'download') download();
-    if (m === 'keys') { openChat(); history.push({ role: 'tutor', text: 'Shortcuts: P pen, H highlighter, E eraser, S shapes, T text, Ctrl+Z undo, Ctrl+Shift+Z redo, M mic, ? help, Esc leaves focus or closes panels.' }); renderChat(); }
+    if (m === 'replay') startReplay();
+    if (m === 'scribble') { settings.scribble = settings.scribble === false; saveSettings(); subtitle(settings.scribble ? 'Scribble over ink to erase it.' : 'Scribbles stay as ink now.', 'tutor'); }
+    if (m === 'keys') { openChat(); history.push({ role: 'tutor', text: 'Shortcuts: P pen, H highlighter, E eraser, V select and move, S shapes, T text, Delete removes a selection, Ctrl+Z undo, Ctrl+Shift+Z redo, M mic, ? help, Esc leaves focus or closes panels.' }); renderChat(); }
   });
   function download() {
     var c = document.createElement('canvas'); c.width = canvas.width; c.height = canvas.height;
@@ -1018,7 +1149,9 @@
   document.addEventListener('keydown', function (e) {
     var typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
     if (e.key === 'Escape') {
-      if (!$('menu').hidden || !$('tool-pop').hidden) { closePops(); return; }
+      if (replay.on) { endReplay(); return; }
+      if (!$('menu').hidden || !$('tool-pop').hidden || !$('step-pop').hidden) { closePops(); return; }
+      if (sel) { clearSel(); return; }
       if (!$('chat').hidden) { closeChat(); return; }
       if (focus.on) { exitFocus(true); return; }
       if (demo.on) { endDemo(); return; }
@@ -1029,7 +1162,8 @@
     }
     if (typing || e.ctrlKey || e.metaKey || e.altKey || demo.on) return;
     var k = e.key.toLowerCase();
-    var map = { p: 'pen', h: 'hl', e: 'eraser', t: 'text' };
+    if ((e.key === 'Delete' || e.key === 'Backspace') && sel) { e.preventDefault(); deleteSel(); return; }
+    var map = { p: 'pen', h: 'hl', e: 'eraser', t: 'text', v: 'lasso' };
     if (map[k]) { setTool(map[k]); return; }
     var shapes = { l: 'line', a: 'arrow', r: 'rect', o: 'ellipse' };
     if (shapes[k]) { shapeKind = shapes[k]; setTool('shape'); return; }
@@ -1038,8 +1172,262 @@
     if (e.key === '?') { askTutor('help'); }
   });
   document.addEventListener('pointerdown', function (e) {
-    if (!e.target.closest('#menu, #menu-btn, #tool-pop, #tools')) closePops();
+    if (!e.target.closest('#menu, #menu-btn, #tool-pop, #tools, #step-pop, .bb-step')) closePops();
   });
+
+  /* ---------- interactive tools on the board (balance, terms, graph, fraction) ---------- */
+  var widgets = [];
+  var wapi = {
+    size: function () { return { w: W, h: H }; },
+    place: function (w, h) { var p = placeFree(w, Math.max(h, 400), { x: W * 0.62, y: 80 }); return { x: p.x, y: Math.min(p.y, Math.max(8, H - 470)) }; },
+    question: function () { return currentQ(); },
+    changed: function () { saveSoon(); },
+    addText: function (text) { addTextLine(text); },
+    win: function (el) { celebrate(el); }
+  };
+  function mountWidgets() { if (window.MarkovWidgets) window.MarkovWidgets.mount($('widgets'), widgets, wapi); }
+  function addTextLine(text) {
+    var r = lastInkRect();
+    var x = r ? r.x : Math.max(90, Math.round(W * 0.18)), y = r ? r.y + r.h + 22 : Math.max(120, Math.round(H * 0.24));
+    if (y > H - 170) y = H - 170;
+    var prev = snapshot();
+    objs.push({ type: 'text', text: String(text).slice(0, 120), x: x, y: y, color: color, size: 22, t: Date.now() });
+    pushUndo(prev); redraw(); saveSoon(); changed(); stepsSoon();
+    subtitle('Written on your board. Select (V) moves it.', 'tutor');
+  }
+  function celebrate(el) {
+    if (!el || reduced) return;
+    el.classList.remove('bb-win'); void el.offsetWidth; el.classList.add('bb-win');
+    setTimeout(function () { el.classList.remove('bb-win'); }, 1100);
+  }
+
+  /* ---------- your work, line by line: tap a step to ask about it ---------- */
+  var HINT_KINDS = { help: 1, stuck: 1, showme: 1, 'step-hint': 1, 'step-why': 1, unsure: 1, circle: 1 };
+  var freeHints = {};
+  function qHints() { return attempt ? ((attempt.qh || {})[qi] || 0) : (freeHints[qi] || 0); }
+  function addQHint() {
+    if (attempt) { attempt.qh = attempt.qh || {}; attempt.qh[qi] = (attempt.qh[qi] || 0) + 1; attempt.hints++; saveAttempt(); }
+    else freeHints[qi] = (freeHints[qi] || 0) + 1;
+  }
+  function workLines() {
+    var boxes = objs.filter(function (o) { return o.type !== 'stamp'; }).map(bbox)
+      .sort(function (a, b) { return (a.y + a.h / 2) - (b.y + b.h / 2); });
+    var lines = [];
+    boxes.forEach(function (b) {
+      var cy = b.y + b.h / 2, L = lines[lines.length - 1];
+      if (L && cy >= L.y - 4 && cy <= L.y + L.h + 4 && b.h < L.h * 2.6 + 30) { var u = union([L, b]); L.x = u.x; L.y = u.y; L.w = u.w; L.h = u.h; }
+      else lines.push({ x: b.x, y: b.y, w: b.w, h: b.h });
+    });
+    return lines.filter(function (l) { return l.w >= 24 && l.h < 220; }).slice(0, 30);
+  }
+  var stepTimer = null;
+  function stepsSoon() { clearTimeout(stepTimer); stepTimer = setTimeout(renderStepHandles, 220); }
+  function renderStepHandles() {
+    var lay = $('steps-layer');
+    lay.innerHTML = ''; lay.hidden = false;
+    if (demo.on || replay.on || noHints || cur || tool === 'eraser' || tool === 'lasso') return;
+    workLines().forEach(function (l, i) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'bb-step';
+      b.style.left = Math.min(W - 36, l.x + l.w + 8) + 'px'; b.style.top = Math.max(0, l.y + l.h / 2 - 14) + 'px';
+      b.setAttribute('aria-label', 'Ask about line ' + (i + 1) + ' of your work'); b.title = 'Ask about this line';
+      b.innerHTML = ic('more');
+      b.addEventListener('click', function (e) { e.stopPropagation(); openStepMenu(l, i); });
+      lay.appendChild(b);
+    });
+  }
+  function openStepMenu(l, i) {
+    var pop = $('step-pop');
+    pop.innerHTML = '<p class="sp-h">Line ' + (i + 1) + ' of your work</p>' +
+      '<button type="button" role="menuitem" data-s="step-check">' + ic('check') + 'Check this step</button>' +
+      '<button type="button" role="menuitem" data-s="step-why">' + ic('help') + 'Why does this work?</button>' +
+      '<button type="button" role="menuitem" data-s="step-hint">' + ic('spark') + 'Hint for this step</button>' +
+      '<button type="button" role="menuitem" data-s="unsure">' + ic('flag') + 'I am unsure here</button>';
+    pop.hidden = false;
+    pop.style.left = Math.max(8, Math.min(W - 240, l.x + l.w + 44)) + 'px';
+    pop.style.top = Math.max(8, Math.min(H - 230, l.y - 10)) + 'px';
+    pop.onclick = function (e) {
+      var b = e.target.closest('[data-s]'); if (!b) return;
+      var k = b.getAttribute('data-s'); pop.hidden = true;
+      if (k === 'unsure') stampUnsure(l);
+      askTutor(k, '', { rect: l });
+    };
+    pop.onkeydown = function (e) {
+      var items = Array.prototype.slice.call(pop.querySelectorAll('button')), j = items.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') { e.preventDefault(); items[(j + 1) % items.length].focus(); }
+      if (e.key === 'ArrowUp') { e.preventDefault(); items[(j - 1 + items.length) % items.length].focus(); }
+      if (e.key === 'Escape') { e.preventDefault(); pop.hidden = true; }
+    };
+    var f = pop.querySelector('button'); if (f) f.focus();
+  }
+  function stampUnsure(l) {
+    var prev = snapshot();
+    objs.push({ type: 'stamp', x: Math.min(W - 30, l.x + l.w + 40), y: l.y + l.h / 2 - 13, t: Date.now() });
+    pushUndo(prev); redraw(); saveSoon(); stepsSoon();
+  }
+
+  /* ---------- circle part of your work to ask about it ---------- */
+  function pointIn(poly, x, y) {
+    var c = false;
+    for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      var xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+      if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) c = !c;
+    }
+    return c;
+  }
+  function pathLen(p) { var len = 0; for (var i = 1; i < p.length; i++) len += Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]); return len; }
+  function loopAround(o) {
+    if (o.type !== 'stroke' || o.tool !== 'pen' || o.pts.length < 12) return null;
+    var p = o.pts, b = bbox(o), gap = Math.hypot(p[0][0] - p[p.length - 1][0], p[0][1] - p[p.length - 1][1]);
+    if (pathLen(p) < 140 || b.w < 40 || b.h < 26 || gap > Math.max(30, 0.2 * Math.max(b.w, b.h))) return null;
+    var inside = objs.filter(function (q) {
+      if (q === o || q.type === 'stamp') return false;
+      var c = bbox(q), cx = c.x + c.w / 2, cy = c.y + c.h / 2;
+      return pointIn(p, cx, cy);
+    });
+    return inside.length ? b : null;
+  }
+  function offerCircleAsk(b) {
+    var chip = $('ask-chip');
+    chip.innerHTML = '<button type="button" class="bb-chip small dark" data-ask>' + ic('help') + 'Ask about this</button>' +
+      '<button type="button" class="bb-chip small icon-only" data-no aria-label="No thanks">' + ic('close') + '</button>';
+    chip.hidden = false;
+    chip.style.left = Math.max(8, Math.min(W - 210, b.x + b.w - 30)) + 'px'; chip.style.top = Math.max(8, b.y - 48) + 'px';
+    chip.onclick = function (e) {
+      if (e.target.closest('[data-ask]')) { chip.hidden = true; askTutor('circle', '', { rect: b }); }
+      else if (e.target.closest('[data-no]')) chip.hidden = true;
+    };
+    clearTimeout(chip._t); chip._t = setTimeout(function () { chip.hidden = true; }, 8000);
+  }
+
+  /* ---------- scribble over something to erase it ---------- */
+  function scribbleHits(o) {
+    if (settings.scribble === false || o.type !== 'stroke' || o.tool !== 'pen' || o.pts.length < 16) return null;
+    var p = o.pts, rev = 0, dir = 0, lastX = p[0][0];
+    for (var i = 1; i < p.length; i++) {
+      var dx = p[i][0] - lastX;
+      if (Math.abs(dx) > 6) { var d = dx > 0 ? 1 : -1; if (dir && d !== dir) rev++; dir = d; lastX = p[i][0]; }
+    }
+    var b = bbox(o);
+    if (rev < 4 || pathLen(p) < b.w * 2.5) return null;
+    var hits = objs.filter(function (q) {
+      var c = bbox(q);
+      var ix = Math.max(0, Math.min(c.x + c.w, b.x + b.w) - Math.max(c.x, b.x)), iy = Math.max(0, Math.min(c.y + c.h, b.y + b.h) - Math.max(c.y, b.y));
+      return ix * iy >= 0.5 * c.w * c.h;
+    });
+    return hits.length ? hits : null;
+  }
+
+  /* ---------- select and move (lasso) ---------- */
+  var sel = null, lassoPts = null, moving = null;
+  function clearSel() { sel = null; $('sel-box').hidden = true; }
+  function selRect() { return sel && sel.length ? union(sel.map(bbox)) : null; }
+  function showSel() {
+    var r = selRect(), s = $('sel-box');
+    if (!r) { clearSel(); return; }
+    s.hidden = false;
+    s.style.left = (r.x - 6) + 'px'; s.style.top = (r.y - 6) + 'px'; s.style.width = (r.w + 12) + 'px'; s.style.height = (r.h + 12) + 'px';
+  }
+  function moveObj(o, dx, dy) {
+    if (o.type === 'stroke') o.pts.forEach(function (p) { p[0] += dx; p[1] += dy; });
+    else if (o.type === 'shape') { o.x1 += dx; o.x2 += dx; o.y1 += dy; o.y2 += dy; }
+    else { o.x += dx; o.y += dy; }
+  }
+  function deleteSel() {
+    if (!sel || !sel.length) return;
+    var prev = snapshot(), gone = sel;
+    objs = objs.filter(function (o) { return gone.indexOf(o) < 0; });
+    pushUndo(prev); clearSel(); redraw(); saveSoon(); changed(); stepsSoon();
+    subtitle('Deleted. Undo brings it back.', 'tutor');
+  }
+  $('sel-del').innerHTML = ic('trash') + 'Delete';
+  $('sel-del').addEventListener('click', deleteSel);
+
+  /* ---------- progress dots and the hint meter ---------- */
+  function renderDots() {
+    var box = $('q-dots');
+    if (!act || questions.length > 12 || questions.length < 2) { box.innerHTML = ''; box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML = items.map(function (it, i) {
+      var a = attempt && attempt.answers[i], st = it.example ? 'ex' : !a ? '' : noHints ? 'saved' : a.ok ? 'ok' : 'no';
+      var word = it.example ? 'worked example' : !a ? (it.answer == null ? 'work on the board' : 'no answer yet') : noHints ? 'answer saved' : a.ok ? 'correct' : 'not yet';
+      return '<button type="button" class="dot ' + st + (i === qi ? ' cur' : '') + '" data-dot="' + i + '" aria-label="Question ' + (i + 1) + ', ' + word + '"' + (i === qi ? ' aria-current="step"' : '') + '></button>';
+    }).join('');
+  }
+  $('q-dots').addEventListener('click', function (e) { var d = e.target.closest('[data-dot]'); if (d) goTo(+d.getAttribute('data-dot')); });
+  function hintMeter() {
+    var h = Math.min(3, qHints());
+    return '<span class="hm" aria-hidden="true">' + [0, 1, 2].map(function (i) { return '<i class="' + (i < h ? 'on' : '') + '"></i>'; }).join('') + '</span>';
+  }
+
+  /* ---------- replay the board ---------- */
+  var replay = { on: false, run: 0, speed: 1, paused: false };
+  function startReplay() {
+    if (!objs.length && !marks.length) { subtitle('Nothing to replay yet. Write something first.', 'tutor'); return; }
+    closePops(); exitFocus(false); clearSel(); T.voice.stopSpeaking();
+    var run = ++replay.run; replay.on = true; replay.paused = false;
+    canvas.style.pointerEvents = 'none'; $('steps-layer').innerHTML = '';
+    var evs = objs.map(function (o, i) { return { o: o, t: o.t || i }; })
+      .concat(marks.map(function (m, i) { return { m: m, t: m.t || (1e13 + i) }; }))
+      .sort(function (a, b) { return a.t - b.t; });
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.clearRect(0, 0, W, H); layer.innerHTML = '';
+    var i = 0;
+    renderReplayBar(0, evs.length);
+    function gate() { return new Promise(function (res) { (function chk() { if (run !== replay.run) return; if (replay.paused) { setTimeout(chk, 150); return; } res(); })(); }); }
+    function strokeAnim(o) {
+      return new Promise(function (res) {
+        var k = 1;
+        (function frame() {
+          if (run !== replay.run) return;
+          if (replay.paused) { setTimeout(frame, 120); return; }
+          var to = Math.min(o.pts.length, k + Math.ceil((reduced ? 40 : 3) * replay.speed));
+          ctx.save(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+          drawObj({ type: 'stroke', tool: o.tool, color: o.color, size: o.size, pressure: o.pressure, pts: o.pts.slice(k - 1, to) });
+          ctx.restore(); k = to;
+          if (k >= o.pts.length) res(); else requestAnimationFrame(frame);
+        })();
+      });
+    }
+    function next() {
+      if (run !== replay.run) return;
+      if (i >= evs.length) { renderReplayBar(evs.length, evs.length, true); return; }
+      var e = evs[i++];
+      renderReplayBar(i, evs.length);
+      gate().then(function () {
+        if (e.m) { drawMark(e.m, true); return wait(520 / replay.speed); }
+        if (e.o.type === 'stroke' && e.o.pts.length > 2) return strokeAnim(e.o);
+        ctx.save(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); drawObj(e.o); ctx.restore();
+        return wait(260 / replay.speed);
+      }).then(function () { return wait(110 / replay.speed); }).then(next);
+    }
+    next();
+  }
+  function renderReplayBar(i, n, done) {
+    var bar = $('replay-bar'); bar.hidden = false;
+    bar.innerHTML = '<span class="rb-t">' + (done ? 'Replay finished' : 'Replaying ' + i + ' of ' + n) + '</span>' +
+      '<span class="rb-track" aria-hidden="true"><i style="width:' + Math.round(100 * i / Math.max(1, n)) + '%"></i></span>' +
+      (done ? '<button type="button" class="bb-chip small" data-r="again">' + ic('play') + 'Again</button>'
+        : '<button type="button" class="bb-chip small icon-only" data-r="pause" aria-label="' + (replay.paused ? 'Play' : 'Pause') + '">' + ic(replay.paused ? 'play' : 'pause') + '</button>' +
+          '<button type="button" class="bb-chip small" data-r="speed" aria-label="Speed, ' + replay.speed + ' times">' + replay.speed + 'x</button>') +
+      '<button type="button" class="bb-chip small dark" data-r="close">Close</button>';
+  }
+  $('replay-bar').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-r]'); if (!b) return;
+    var r = b.getAttribute('data-r');
+    if (r === 'close') { endReplay(); return; }
+    if (r === 'again') { startReplay(); return; }
+    if (r === 'pause') { replay.paused = !replay.paused; }
+    if (r === 'speed') { replay.speed = replay.speed === 1 ? 2 : replay.speed === 2 ? 4 : 1; }
+    var txt = $('replay-bar').querySelector('.rb-t').textContent.match(/(\d+) of (\d+)/);
+    if (txt) renderReplayBar(+txt[1], +txt[2]);
+    var again = $('replay-bar').querySelector('[data-r="' + r + '"]'); if (again) again.focus();
+  });
+  function endReplay() {
+    if (!replay.on) return;
+    replay.run++; replay.on = false; replay.paused = false;
+    $('replay-bar').hidden = true; canvas.style.pointerEvents = '';
+    redraw(); renderMarks(); stepsSoon();
+  }
 
   /* ---------- finishing an activity ---------- */
   // The student looks back over the set and says how it went. That review is what
@@ -1132,7 +1520,8 @@
   var demo = { on: false, done: false, saved: null, run: 0 };
   function startDemo() {
     exitFocus(false); $('chat').hidden = true; T.voice.stopSpeaking();
-    if (!demo.on) demo.saved = { questions: questions, items: items, qi: qi, objs: objs, marks: marks, extra: extra, history: history };
+    if (!demo.on) demo.saved = { questions: questions, items: items, qi: qi, objs: objs, marks: marks, widgets: widgets, extra: extra, history: history };
+    endReplay(); clearSel(); widgets = []; mountWidgets(); $('steps-layer').innerHTML = '';
     finishBtn.hidden = true;
     demo.on = true; demo.done = false; var run = ++demo.run;
     questions = ['5x ' + MINUS + ' 4 = 21']; items = [{ text: questions[0] }]; qi = 0; extra = 0; objs = []; marks = []; history = [];
@@ -1168,7 +1557,7 @@
     demo.run++; demo.on = false; demo.done = false;
     var s = demo.saved || { questions: [], items: [], qi: 0, objs: [], marks: [], extra: 0, history: [] };
     questions = s.questions; items = s.items || questions.map(function (t) { return { text: t }; }); qi = s.qi; objs = s.objs; marks = s.marks; extra = s.extra; history = s.history;
-    finishBtn.hidden = !act;
+    finishBtn.hidden = !act; widgets = s.widgets || []; mountWidgets(); stepsSoon();
     canvas.style.pointerEvents = '';
     exitFocus(false); renderQuestion(); redraw(); renderMarks(); renderActions(); renderChat(); idleStatus(); cursorPark();
     subtitle(questions.length ? 'Your turn. Start writing whenever you are ready.' : 'Your turn. Write a problem, or tap Practice for one.', 'tutor');
@@ -1180,7 +1569,7 @@
   $('back').innerHTML = ic('back') + '<span>' + backLabel + '</span>';
   $('back').setAttribute('href', backHref);
   $('back').setAttribute('aria-label', act ? backLabel : 'Back to your courses');
-  window.addEventListener('resize', function () { resize(); if (focus.on) enterFocus(focus.rect, $('focus-line') ? $('focus-line').textContent : ''); });
+  window.addEventListener('resize', function () { resize(); stepsSoon(); if (sel) showSel(); if (focus.on) enterFocus(focus.rect, $('focus-line') ? $('focus-line').textContent : ''); });
   resize(); renderTools(); renderQuestion(); renderActions(); renderChat(); loadBoard(); markActivity();
   finishBtn.hidden = !act;
   setStatus('thinking', 'Getting ready');
@@ -1196,5 +1585,5 @@
   });
   if (document.fonts && document.fonts.load) document.fonts.load('600 26px Caveat').then(function () { redraw(); renderMarks(); });
 
-  window.MarkovBoard = { _test: { item: function () { return currentItem(); }, compile: compile, state: function () { return { objs: objs, marks: marks, focus: focus.on, qi: qi, questions: questions, tool: tool, demo: demo.on }; }, askTutor: askTutor, startDemo: startDemo, placeFree: placeFree } };
+  window.MarkovBoard = { _test: { item: function () { return currentItem(); }, lines: function () { return workLines(); }, compile: compile, state: function () { return { objs: objs, marks: marks, focus: focus.on, qi: qi, questions: questions, tool: tool, demo: demo.on }; }, askTutor: askTutor, startDemo: startDemo, placeFree: placeFree } };
 })();

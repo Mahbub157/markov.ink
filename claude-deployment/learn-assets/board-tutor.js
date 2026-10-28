@@ -84,7 +84,12 @@
     fixed: 'The student says they fixed it. Look again and confirm or gently point to what is still off.',
     practice: 'The student wants a new practice question like the current one. Put it in "say" as: Try this: <question>. No actions.',
     watch: 'watch',
-    chat: 'The student said something. Answer it.'
+    chat: 'The student said something. Answer it.',
+    'step-check': 'Check only the step inside the marked box. Say if it follows from the line above; if not, ask a question that points to the slip.',
+    'step-why': 'Explain in one or two sentences why the step inside the marked box works, without solving any further.',
+    'step-hint': 'Give one small hint for the step inside the marked box.',
+    unsure: 'The student marked the step inside the box as one they are unsure about. Ask one guiding question about it.',
+    circle: 'The student circled the part of their work inside the marked box and wants help with it. Ask one guiding question.'
   };
 
   function liveAsk(req) {
@@ -93,6 +98,7 @@
     parts.push({ type: 'text', text:
       'Question: ' + (req.question || '(the student is choosing their own problem)') + '\n' +
       (req.topic ? 'Topic: ' + req.topic + String.fromCharCode(10) : '') +
+      (req.box && req.image ? 'Marked box in the picture: x ' + Math.round(req.box.x / req.image.scale) + ', y ' + Math.round(req.box.y / req.image.scale) + ', width ' + Math.round(req.box.w / req.image.scale) + ', height ' + Math.round(req.box.h / req.image.scale) + String.fromCharCode(10) : '') +
       'Board picture: ' + (req.image ? req.image.w + ' x ' + req.image.h + ' pixels' : 'none') + '\n' +
       'Request: ' + ASKS[req.kind] + (req.text ? '\nThe student said: "' + req.text.slice(0, 400) + '"' : '') });
     var msgs = [];
@@ -176,6 +182,12 @@
       else return { say: 'Demo replies are on, so I can only give general hints for now. Try I need help, or Practice.', actions: [] };
     }
     if (kind === 'watch') return null;
+    var H = req.hints || [];
+    if (kind === 'step-check') return { say: 'In demo replies I cannot read handwriting, so I cannot check this line yet. Compare it with the line above: was the same thing done to both sides?', actions: [] };
+    if (kind === 'step-why') return { say: H[0] || 'Each step should do the same thing to both sides, so the two sides stay equal. What was done here?', actions: [] };
+    if (kind === 'step-hint') return { say: H[1] || 'Look at what changed from the line above. Only one small thing should change at a time.', actions: [] };
+    if (kind === 'unsure') return { say: 'Good call marking that. ' + (H[0] || 'What did you do to get from the line above to this one?'), actions: [] };
+    if (kind === 'circle') return { say: 'Let us look at the part you circled. ' + (H[0] || 'What is it asking you to do?'), actions: [] };
     if (kind === 'practice') {
       var p = practiceQ();
       return { say: 'Try this one: ' + p, practice: p, actions: [] };

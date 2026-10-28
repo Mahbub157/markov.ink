@@ -87,6 +87,20 @@ Rules worth knowing:
   was right, hints used, and "How did it go?". That review calls `recordCompletion`, so points,
   the streak, and topic evidence update; a set covering several topics leaves one result per
   topic. Attempts in progress are kept in `markov.attempts.v1`.
+- Interactive board (`learn-assets/board-widgets.js` plus `board.js`):
+  - Tools from the "+" button, saved with the board: a balance (same move on both sides, or
+    "left only" to see it tip), move the terms (tap or drag a term across the = sign and its
+    sign flips), a graph of y = mx + b with sliders and a draggable intercept, and a fraction
+    bar to split, shade, and compare. "Write it on the board" copies the result into your work.
+  - Each line of your work gets a small button: Check this step, Why does this work?, Hint, or
+    "I am unsure here" (adds a ? stamp). Circling part of your work offers "Ask about this".
+  - Select and move (V) with a lasso, Delete removes the selection; scribbling over ink erases
+    it (can be turned off in the menu). Undo covers all of these.
+  - Question types: spot the mistake (Practice and mixed test practice) and fill in the blanks
+    (Learn the idea, after the worked example).
+  - Progress dots for the set, a three-dot hint meter on "I need help", a small celebration on
+    correct answers, and "Replay this board" in the menu, which redraws the work and the
+    tutor's marks in order.
 
 Demo mode: `course.html?c=<id>&demo=1` shows a labeled banner, uses a separate key
 (`markov.learning.demo.v1`), and adds simulation controls on the progress page. Nothing in demo

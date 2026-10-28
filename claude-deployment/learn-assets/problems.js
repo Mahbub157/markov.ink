@@ -129,6 +129,13 @@
 
   // Returns { ok: true|false, why } or null when the input cannot be read.
   function check(item, input) {
+    if (item.type === 'spot') { var k = Number(input); return isFinite(k) ? { ok: k === item.answer } : null; }
+    if (item.type === 'fill') {
+      var want = fillBlanks(item), got = Array.isArray(input) ? input : [];
+      if (got.length !== want.length || got.some(function (g) { return !clean(g); })) return null;
+      var each = want.map(function (w, i) { var v = num(clean(got[i])); return v != null && Math.abs(v - w) < 1e-9; });
+      return { ok: each.every(Boolean), each: each };
+    }
     var s = clean(input);
     if (!s || item.answer == null) return null;
     if (item.type === 'value') {
@@ -165,6 +172,8 @@
 
   function answerText(item) {
     if (item.answer == null) return '';
+    if (item.type === 'spot') return 'Line ' + (item.answer + 1) + ' is wrong';
+    if (item.type === 'fill') return fillBlanks(item).map(n).join(', ');
     if (item.type === 'value') return n(item.answer);
     if (item.type === 'solve') return 'x = ' + n(item.answer);
     if (item.type === 'expr') { var a = item.answer; return (a.x ? xt(a.x) : '') + (a.k ? (a.x ? sgn(a.k) : n(a.k)) : (a.x ? '' : '0')); }
@@ -174,6 +183,86 @@
   function placeholder(item) {
     return { value: 'Your answer', solve: 'x = ?', expr: 'Like 6x ' + MINUS + ' 2', ineq: 'x < ?' }[item.type] || 'Your answer';
   }
+
+  /* ---------- spot the mistake: a worked solution with one wrong line ---------- */
+  // Each returns { type: 'spot', text, lines, answer: index of the wrong line, explain }.
+  function frac(a, b) { return b === 1 ? n(a) : (a % b === 0 ? n(a / b) : n(a) + '/' + b); }
+  var SPOT = {
+    'alg1-evaluate': function (r) {
+      var p = int(r, 2, 9), k = int(r, 2, 9), q = int(r, 1, 9);
+      return { lines: ['Find ' + p + 'a + ' + q + ' when a = 5'.replace('5', String(k)), p + 'a + ' + q + ' = ' + p + String(k) + ' + ' + q, '= ' + (p * 10 + k + q)], answer: 1,
+        explain: p + 'a means ' + p + ' times a, so it becomes ' + p + '(' + k + ') = ' + p * k + ', not the number ' + p + String(k) + '.' };
+    },
+    'alg1-like-terms': function (r) {
+      var a = int(r, 2, 8), c = int(r, 2, 8), b = int(r, 2, 9), d = int(r, 2, 9);
+      return { lines: ['Simplify ' + a + 'x + ' + b + ' + ' + c + 'x ' + MINUS + ' ' + d, '= ' + a + 'x + ' + c + 'x + ' + b + ' ' + MINUS + ' ' + d, '= ' + (a + c) + 'x + ' + (b + d)], answer: 2,
+        explain: 'The ' + d + ' is taken away, so the numbers give ' + b + ' ' + MINUS + ' ' + d + ' = ' + n(b - d) + ', not ' + (b + d) + '.' };
+    },
+    'alg1-distribute': function (r) {
+      var a = int(r, 2, 9), b = int(r, 2, 9), k = a * b + int(r, 1, 9);
+      return { lines: [a + '(x + ' + b + ') = ' + k, a + 'x + ' + b + ' = ' + k, a + 'x = ' + (k - b)], answer: 1,
+        explain: 'The ' + a + ' multiplies both parts of the bracket: ' + a + 'x + ' + a * b + ', not ' + a + 'x + ' + b + '.' };
+    },
+    'alg1-one-step': function (r) {
+      var x = int(r, 2, 15), b = int(r, 2, 12);
+      return { lines: ['x + ' + b + ' = ' + (x + b), 'x = ' + (x + b) + ' + ' + b, 'x = ' + (x + 2 * b)], answer: 1,
+        explain: 'To undo + ' + b + ', take ' + b + ' away from both sides: x = ' + (x + b) + ' ' + MINUS + ' ' + b + '.' };
+    },
+    'alg1-two-step': function (r) {
+      var a = int(r, 2, 9), x = int(r, 1, 10), b = int(r, 2, 12), c = a * x + b;
+      return { lines: [a + 'x + ' + b + ' = ' + c, a + 'x = ' + (c + b), 'x = ' + frac(c + b, a)], answer: 1,
+        explain: 'To undo + ' + b + ', take ' + b + ' from both sides: ' + a + 'x = ' + c + ' ' + MINUS + ' ' + b + ' = ' + (c - b) + '.' };
+    },
+    'alg1-both-sides': function (r) {
+      var c = int(r, 1, 4), a = c + int(r, 1, 5), x = int(r, 1, 8), b = int(r, 1, 9), d = (a - c) * x + b;
+      return { lines: [a + 'x + ' + b + ' = ' + (c === 1 ? '' : c) + 'x + ' + d, (a + c) + 'x + ' + b + ' = ' + d, (a + c) + 'x = ' + (d - b)], answer: 1,
+        explain: 'Taking ' + (c === 1 ? '' : c) + 'x from both sides leaves ' + (a - c) + 'x, not ' + (a + c) + 'x.' };
+    },
+    'alg1-fractions': function (r) {
+      var a = int(r, 2, 6), k = int(r, 1, 8), b = int(r, 1, 9);
+      return { lines: ['x/' + a + ' + ' + b + ' = ' + (k + b), 'x/' + a + ' = ' + k, 'x = ' + frac(k, a)], answer: 2,
+        explain: 'x is divided by ' + a + ', so multiply both sides by ' + a + ': x = ' + a * k + '.' };
+    },
+    'alg1-inequalities': function (r) {
+      var a = int(r, 2, 6), m = int(r, -5, 5), b = int(r, 1, 9), c = -a * m + b;
+      return { lines: [MINUS + a + 'x + ' + b + ' > ' + n(c), MINUS + a + 'x > ' + n(c - b), 'x > ' + n(m)], answer: 2,
+        explain: 'Dividing by ' + MINUS + a + ' flips the sign: x < ' + n(m) + '.' };
+    }
+  };
+
+  /* ---------- fill in the blank: the steps are written, a few numbers are missing ---------- */
+  // Each returns { type: 'fill', text, steps: [[text or { blank: value }]...] }.
+  function B(v) { return { blank: v }; }
+  var FILL = {
+    'alg1-evaluate': function (r) { var p = int(r, 2, 9), k = int(r, 2, 9), q = int(r, 1, 9);
+      return { text: 'Find ' + p + 'a + ' + q + ' when a = ' + k, steps: [[p + '(', B(k), ') + ' + q], ['= ', B(p * k), ' + ' + q], ['= ', B(p * k + q)]] }; },
+    'alg1-like-terms': function (r) { var a = int(r, 2, 8), c = int(r, 2, 8), b = int(r, 5, 12), d = int(r, 1, 4);
+      return { text: 'Simplify ' + a + 'x + ' + b + ' + ' + c + 'x ' + MINUS + ' ' + d, steps: [['x terms: ' + a + 'x + ' + c + 'x = ', B(a + c), 'x'], ['numbers: ' + b + ' ' + MINUS + ' ' + d + ' = ', B(b - d)]] }; },
+    'alg1-distribute': function (r) { var a = int(r, 2, 9), b = int(r, 1, 9);
+      return { text: 'Expand ' + a + '(x + ' + b + ')', steps: [[a + ' times x = ', B(a), 'x'], [a + ' times ' + b + ' = ', B(a * b)], ['so ' + a + '(x + ' + b + ') = ' + a + 'x + ', B(a * b)]] }; },
+    'alg1-one-step': function (r) { var x = int(r, 2, 15), b = int(r, 2, 12);
+      return { text: 'Solve x + ' + b + ' = ' + (x + b), steps: [['take ' + b + ' from both sides: x = ' + (x + b) + ' ' + MINUS + ' ' + b], ['x = ', B(x)]] }; },
+    'alg1-two-step': function (r) { var a = int(r, 2, 9), x = int(r, 1, 10), b = int(r, 2, 12), c = a * x + b;
+      return { text: 'Solve ' + a + 'x + ' + b + ' = ' + c, steps: [['take ' + b + ' from both sides: ' + a + 'x = ', B(c - b)], ['divide both sides by ' + a + ': x = ', B(x)]] }; },
+    'alg1-both-sides': function (r) { var c = int(r, 1, 4), a = c + int(r, 1, 5), x = int(r, 1, 8), b = int(r, 1, 9), d = (a - c) * x + b;
+      return { text: 'Solve ' + a + 'x + ' + b + ' = ' + (c === 1 ? '' : c) + 'x + ' + d, steps: [['take ' + (c === 1 ? '' : c) + 'x from both sides: ', B(a - c), 'x + ' + b + ' = ' + d], ['take ' + b + ' from both sides: ' + (a - c) + 'x = ', B(d - b)], ['x = ', B(x)]] }; },
+    'alg1-fractions': function (r) { var a = int(r, 2, 6), k = int(r, 1, 8), b = int(r, 1, 9);
+      return { text: 'Solve x/' + a + ' + ' + b + ' = ' + (k + b), steps: [['take ' + b + ' from both sides: x/' + a + ' = ', B(k)], ['multiply both sides by ' + a + ': x = ', B(a * k)]] }; },
+    'alg1-inequalities': function (r) { var a = int(r, 2, 6), m = int(r, -5, 5), b = int(r, 1, 9), c = -a * m + b;
+      return { text: 'Solve ' + MINUS + a + 'x + ' + b + ' > ' + n(c), steps: [['take ' + b + ' from both sides: ' + MINUS + a + 'x > ', B(c - b)], ['divide by ' + MINUS + a + ' and flip the sign: x < ', B(m)]] }; }
+  };
+
+  function makeSpot(topicId, r) {
+    var g = SPOT[topicId]; if (!g) return null;
+    var s = g(r);
+    return { type: 'spot', topicId: topicId, text: 'Spot the mistake: one line below is wrong. Tap it.', lines: s.lines, answer: s.answer, explain: s.explain };
+  }
+  function makeFill(topicId, r) {
+    var g = FILL[topicId]; if (!g) return null;
+    var s = g(r);
+    return { type: 'fill', topicId: topicId, text: s.text, steps: s.steps, answer: 'fill' };
+  }
+  function fillBlanks(item) { var out = []; item.steps.forEach(function (st) { st.forEach(function (p) { if (p && typeof p === 'object') out.push(p.blank); }); }); return out; }
 
   /* ---------- building an activity's questions ---------- */
   function make(topicId, r, count, used) {
@@ -197,8 +286,12 @@
       var tid = a.topicId;
       if (a.mode === 'learn') {
         if (WORKED[tid]) s.items.push({ example: true, text: (ctx.topicExample && ctx.topicExample(tid)) || '', steps: WORKED[tid], topicId: tid });
-        s.items = s.items.concat(make(tid, r, 2, used));
-      } else s.items = make(tid, r, a.mode === 'check' ? 3 : 4, used);
+        var fl = makeFill(tid, r); if (fl) s.items.push(fl);
+        s.items = s.items.concat(make(tid, r, 1, used));
+      } else if (a.mode === 'practice') {
+        s.items = make(tid, r, 3, used);
+        var sp = makeSpot(tid, r); if (sp) s.items.splice(2, 0, sp);
+      } else s.items = make(tid, r, 3, used);
       if (!s.items.length) s.items.push(fallback(tid));
     } else if (a.type === 'homework' && ctx.homework) {
       s.items = ctx.homework.questions.map(function (q) { return { text: q.text, topicId: q.topicId || null }; });
@@ -207,7 +300,7 @@
     } else if (a.type === 'test-step' && ctx.plan) {
       var topics = ctx.plan.topicIds || [], step = a.id.slice(ctx.plan.id.length + 1);
       if (step.indexOf('review:') === 0) s.items = make(step.slice(7), r, 3, used);
-      else if (step === 'mixed') topics.forEach(function (t) { s.items = s.items.concat(make(t, r, 2, used)); }), shuffle(r, s.items), s.items = s.items.slice(0, 8);
+      else if (step === 'mixed') { topics.forEach(function (t) { s.items = s.items.concat(make(t, r, 2, used)); }); shuffle(r, s.items); s.items = s.items.slice(0, 7); var ms = topics.length ? makeSpot(topics[Math.floor(r() * topics.length)], r) : null; if (ms) s.items.splice(3, 0, ms); }
       else topics.forEach(function (t) { s.items = s.items.concat(make(t, r, topics.length < 3 ? 2 : 1, used)); }), s.items = s.items.slice(0, 6);
       if (step.indexOf('review:') !== 0) (ctx.plan.freeTopics || []).slice(0, 2).forEach(function (f) { s.items.push({ text: 'Write and solve one problem from: ' + f }); });
       if (!s.items.length) s.items.push({ text: 'Write a problem from this test and solve it.' });
@@ -218,6 +311,7 @@
   window.MarkovProblems = {
     sessionFor: sessionFor, check: check, answerText: answerText, placeholder: placeholder,
     hintsFor: function (topicId) { return HINTS[topicId] || null; },
+    fillBlanks: fillBlanks, spots: SPOT, fills: FILL,
     compile: compile, generators: GEN, worked: WORKED
   };
 })();

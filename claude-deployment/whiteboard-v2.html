@@ -24,6 +24,7 @@
   </div>
   <span class="bb-spacer"></span>
   <span class="bb-status" id="status" role="status" aria-live="polite"><i></i><span>Getting ready</span></span>
+  <button type="button" class="bb-finish-btn" id="finish-btn" hidden>Finish</button>
   <div class="bb-menu-wrap">
     <button type="button" class="bb-icon" id="menu-btn" aria-label="Board menu" aria-haspopup="true" aria-expanded="false" aria-controls="menu"></button>
     <div class="bb-pop bb-menu" id="menu" role="menu" hidden></div>
@@ -63,12 +64,15 @@
   </aside>
 </main>
 
+<dialog class="bb-dialog" id="finish-dlg" aria-labelledby="fin-title"></dialog>
+
 <noscript><p class="bb-nojs">The board needs JavaScript. <a href="learn">Go back to your courses</a>.</p></noscript>
 
 <script src="learn-assets/profile.js"></script>
 <script src="learn-assets/ui.js"></script>
 <script src="learn-assets/course-data.js"></script>
 <script src="learn-assets/learning.js"></script>
+<script src="learn-assets/problems.js"></script>
 <script src="learn-assets/board-tutor.js"></script>
 <script src="learn-assets/board.js"></script>
 </body>

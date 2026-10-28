@@ -202,7 +202,9 @@
     return null;
   }
 
-  // Interface for the future learning workspace. Not implemented in this phase.
+  // The whiteboard (whiteboard-v2.html?c=<course>&act=<activity id>) is the workspace now.
+  // It builds the questions with MarkovProblems and reports back through recordCompletion.
+  // Original interface notes:
   // The workspace will receive exactly this context and nothing else.
   // MarkovWorkspace.launch({
   //   courseId, catalogId, unitId, topicId, activityId,

@@ -43,37 +43,80 @@
   function ic(n) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + (IC[n] || '') + '</svg>'; }
 
   /* ---------- where the questions come from ---------- */
+  // ?c=<course>&act=<activity id>: any course activity (topic modes, homework, assignments, test steps).
+  // ?c=<course>&hw=<id>: older homework links. ?text=<problem>: one question. Nothing: free practice.
+  var PB = window.MarkovProblems, Pr = window.MarkovProfile, C = window.MarkovCourse;
   var params = new URLSearchParams(location.search);
-  var courseId = params.get('c') || '', hwId = params.get('hw') || '', demoQS = params.get('demo') === '1' ? '&demo=1' : '';
-  var questions = [], title = '', qi = 0, extra = 0;
-  var hw = null;
-  try { if (L && courseId && hwId) hw = L.course(courseId).homework[hwId] || null; } catch (e) { hw = null; }
-  if (hw) {
-    questions = hw.questions.map(function (q) { return q.text; });
-    title = hw.title;
-    qi = Math.max(0, Math.min(questions.length - 1, +(params.get('q') || 0) || 0));
-  } else if (params.get('text')) {
-    questions = [params.get('text').slice(0, 400)];
+  var courseId = params.get('c') || '', demoQS = params.get('demo') === '1' ? '&demo=1' : '';
+  var actId = params.get('act') || (params.get('hw') ? 'hw:' + params.get('hw') : '');
+  var questions = [], items = [], title = '', qi = 0, extra = 0;
+  var act = null, sess = null, attempt = null, hw = null, outline = null, topicId = null;
+  function topicTitle(id) { var x = outline && C ? C.findTopic(outline, id) : null; return x ? x.topic.title : ''; }
+  try {
+    var prof = Pr ? Pr.load().profile : null;
+    var crs = prof && prof.courses ? prof.courses.filter(function (c) { return c.id === courseId; })[0] : null;
+    outline = crs && C ? C.outlineFor(crs.catalogId) : null;
+    if (L && courseId && actId) {
+      act = L.activity(courseId, actId);
+      if (!act && actId.indexOf('hw:') === 0) {
+        var h0 = L.course(courseId).homework[actId.slice(3)];
+        if (h0) act = L.prepareActivity(courseId, { id: actId, type: 'homework', kind: 'guided', homeworkId: h0.id, title: h0.title });
+      }
+    }
+    if (act && PB) {
+      attempt = loadAttempt();
+      var ctx = { courseId: courseId, activity: act, attemptId: attempt.id, topicTitle: topicTitle,
+        topicExample: function (id) { var x = outline && C.findTopic(outline, id); return x ? x.topic.example : ''; } };
+      if (act.type === 'homework') { hw = L.course(courseId).homework[act.homeworkId] || null; ctx.homework = hw; }
+      if (act.type === 'assignment') ctx.assignment = (prof && prof.school ? C.assignmentsFor(prof.school.code) : []).filter(function (a) { return a.id === act.assignmentId; })[0] || null;
+      if (act.type === 'test-step') ctx.plan = L.course(courseId).plans[act.planId] || null;
+      sess = PB.sessionFor(ctx);
+      items = sess.items; questions = items.map(function (i) { return i.text; });
+      title = act.title; topicId = sess.topicId;
+      if (!questions.length) { act = null; sess = null; }
+    }
+  } catch (e) { act = null; sess = null; }
+  if (act) qi = Math.max(0, Math.min(questions.length - 1, +(params.get('q') || 0) || 0));
+  else if (params.get('text')) { questions = [params.get('text').slice(0, 400)]; items = [{ text: questions[0] }]; }
+  var noHints = !!(sess && sess.noHints);
+
+  function backRoute() {
+    if (!act) return '';
+    if (act.type === 'homework') return '/homework/h/' + act.homeworkId;
+    if (act.type === 'assignment') return '/homework/a/' + act.assignmentId;
+    if (act.type === 'test-step') return '/test/' + act.planId;
+    if (act.type === 'topic') return '/topic/' + act.topicId + '/' + act.mode;
+    return '/';
   }
-  var backHref = hw ? 'course?c=' + encodeURIComponent(courseId) + demoQS + '#/homework/h/' + encodeURIComponent(hwId)
+  var backHref = act ? 'course?c=' + encodeURIComponent(courseId) + demoQS + '#' + backRoute()
     : courseId ? 'course?c=' + encodeURIComponent(courseId) + demoQS : 'learn';
 
   function currentQ() { return questions[qi] || ''; }
+  function currentItem() { return items[qi] || { text: currentQ() }; }
+
+  // One attempt per run through an activity: its own problems, answers, and hint count.
+  function attemptKey() { return (L && L.DEMO ? 'demo|' : '') + courseId + '|' + actId; }
+  function readAttempts() { try { return JSON.parse(localStorage.getItem('markov.attempts.v1') || '{}') || {}; } catch (e) { return {}; } }
+  function loadAttempt() {
+    var all = readAttempts(), a = all[attemptKey()];
+    if (!a || !a.id) { a = { id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), answers: {}, hints: 0, started: new Date().toISOString() }; all[attemptKey()] = a; writeAttempts(all); }
+    return a;
+  }
+  function writeAttempts(all) { try { localStorage.setItem('markov.attempts.v1', JSON.stringify(all)); } catch (e) {} }
+  function saveAttempt() { if (!attempt || demo.on) return; var all = readAttempts(); all[attemptKey()] = attempt; writeAttempts(all); }
+  function endAttempt() { var all = readAttempts(); delete all[attemptKey()]; writeAttempts(all); }
 
   function markActivity() {
-    if (!hw || !L) return;
+    if (!act || !L) return;
     try {
-      var id = 'hw:' + hwId;
-      if (!L.activity(courseId, id)) L.prepareActivity(courseId, { id: id, type: 'homework', kind: 'guided', homeworkId: hwId, title: hw.title });
-      var a = L.activity(courseId, id);
-      L.setStatus(courseId, id, a && a.status === 'finished' ? a.status : 'started', { index: qi });
-      L.setResume(courseId, '/homework/h/' + hwId, hw.title, 'started');
+      L.setStatus(courseId, act.id, 'started', { index: qi });
+      L.setResume(courseId, backRoute(), act.title, 'started');
     } catch (e) {}
   }
 
   /* ---------- saved boards ---------- */
   var STORE = 'markov.board.v1';
-  function boardKey() { return (courseId || 'free') + '|' + (hwId || '') + '|' + currentQ().slice(0, 120); }
+  function boardKey() { return (courseId || 'free') + '|' + (act ? act.id + (act.type === 'homework' ? '' : '|' + attempt.id) : '') + '|' + currentQ().slice(0, 120); }
   function readStore() { try { return JSON.parse(localStorage.getItem(STORE) || '{}') || {}; } catch (e) { return {}; } }
   var saveTimer = null;
   function saveSoon() {
@@ -668,6 +711,12 @@
         : '<div class="bb-grp left"></div><div class="bb-grp right"><button type="button" class="bb-chip" data-act="end-demo">' + ic('close') + 'Stop the demo</button></div>';
       return;
     }
+    if (noHints) {
+      a.innerHTML = '<div class="bb-grp left"><span class="bb-note">' + ic('eye') + 'A check: no hints until you finish</span></div>' +
+        '<div class="bb-grp right"><button type="button" class="bb-chip icon-only has-badge" data-act="chat" aria-label="Conversation" title="Conversation">' + ic('chat') + '</button>' +
+        '<button type="button" class="bb-chip dark" data-act="finish">' + ic('check') + 'Finish</button></div>';
+      return;
+    }
     // Help and check sit left of the tutor's reply; talking, practice, and the conversation sit right.
     a.innerHTML = '<div class="bb-grp left">' +
       '<button type="button" class="bb-chip" data-act="help" aria-label="I need help">' + ic('help') + '<span class="lbl-long">I need help</span><span class="lbl-short" aria-hidden="true">Help</span></button>' +
@@ -690,6 +739,7 @@
     if (act === 'leave-focus') return exitFocus(true);
     if (act === 'end-demo') return endDemo();
     if (act === 'replay') return startDemo();
+    if (act === 'finish') return openFinish();
   });
 
   /* ---------- focus mode ---------- */
@@ -743,10 +793,14 @@
     if (busy && kind !== 'watch') { subtitle('One moment, still thinking about your last question.', 'tutor'); return; }
     if (busy) return;
     if (kind === 'help' && focus.on) kind = 'stuck';
+    if (noHints && kind !== 'chat') { if (kind !== 'watch') subtitle('This is a check, so there are no hints yet. Finish to see how it went.', 'tutor'); return; }
     if (kind !== 'watch') { clearTimeout(watchTimer); T.voice.stopSpeaking(); }
+    if (attempt && (kind === 'help' || kind === 'stuck' || kind === 'showme')) { attempt.hints++; saveAttempt(); }
     busy = true; lastWatch = Date.now();
     if (kind !== 'watch') { setStatus('thinking', 'Tutor is thinking'); cursorTo((lastInkRect() || { x: W / 2, y: H / 3, w: 0 }).x + 40, (lastInkRect() || { y: H / 3 }).y - 26); }
-    var req = { kind: kind, text: text || '', question: currentQ(), history: history.slice(-8), image: T.isLive() ? boardImage() : null, boardW: W, boardH: H };
+    var tid = currentItem().topicId || topicId;
+    var req = { kind: kind, text: text || '', question: currentQ(), topic: tid ? topicTitle(tid) : '', hints: tid && PB ? PB.hintsFor(tid) : null, noHints: noHints,
+      history: history.slice(-8), image: T.isLive() ? boardImage() : null, boardW: W, boardH: H };
     if (kind !== 'watch') watchedVersion = inkVersion;
     return T.ask(req).then(function (reply) {
       busy = false;
@@ -770,7 +824,7 @@
 
   function changed() {
     inkVersion++; lastChange = Date.now();
-    if (!T.isLive() || !settings.watch || demo.on) return;
+    if (!T.isLive() || !settings.watch || demo.on || noHints) return;
     clearTimeout(watchTimer);
     watchTimer = setTimeout(function () {
       if (busy || inkVersion === watchedVersion || Date.now() - lastWatch < 20000 || cur) return;
@@ -836,22 +890,60 @@
 
   /* ---------- questions ---------- */
   function addPractice(q) {
-    questions.push(q); extra++;
+    questions.push(q); items.push({ text: q }); extra++;
     goTo(questions.length - 1);
   }
+  function mathText(q) { return q.split('-').join(MINUS).replace(new RegExp('(\w)' + MINUS + '(\w)', 'g'), '$1-$2'); }
   function renderQuestion() {
-    var q = currentQ(), card = $('question');
-    var label = hw ? 'Q' + (qi + 1) : questions.length ? (qi >= questions.length - extra ? 'Practice' : 'Question') : 'Start';
-    card.className = 'bb-question' + (settings.qMini ? ' mini' : '');
-    card.innerHTML = '<span class="qlabel">' + esc(label) + '</span>' +
-      '<div class="qtext">' + esc(q ? q.split('-').join(MINUS).replace(new RegExp('(\\w)' + MINUS + '(\\w)', 'g'), '$1-$2') : 'Write any problem on the board, or tap Practice for one.') + '</div>' +
+    var q = currentQ(), it = currentItem(), card = $('question');
+    var isExtra = qi >= questions.length - extra && extra > 0;
+    var label = it.example ? 'Worked example' : isExtra ? 'Practice' : act ? 'Q' + (qi + 1 - (items[0] && items[0].example ? 1 : 0)) : questions.length ? 'Question' : 'Start';
+    var body = '<div class="qtext">' + esc(q ? mathText(q) : 'Write any problem on the board, or tap Practice for one.') + '</div>';
+    if (it.example) {
+      body += '<ol class="qsteps">' + it.steps.map(function (st) { return '<li>' + esc(st) + '</li>'; }).join('') + '</ol>' +
+        '<button type="button" class="bb-chip dark small" id="q-yourturn">Your turn' + ic('right') + '</button>';
+    } else if (it.answer != null && !isExtra) {
+      var saved = attempt && attempt.answers[qi];
+      body += '<form class="qans" id="qans" novalidate><label class="sr-only" for="ans-in">Your answer to this question</label>' +
+        '<input id="ans-in" type="text" autocomplete="off" spellcheck="false" inputmode="text" placeholder="' + esc(PB.placeholder(it)) + '" value="' + esc(saved ? saved.v : '') + '">' +
+        '<button type="submit" class="bb-chip small">' + (noHints ? 'Save answer' : 'Check answer') + '</button></form>' +
+        '<p class="qfb" id="qfb" aria-live="polite">' + answerFeedback(saved, it) + '</p>';
+    }
+    card.className = 'bb-question' + (settings.qMini ? ' mini' : '') + (it.example ? ' example' : '');
+    card.innerHTML = '<span class="qlabel">' + esc(label) + '</span><div class="qbody">' + body + '</div>' +
       '<button type="button" class="bb-icon" id="q-toggle" aria-expanded="' + !settings.qMini + '" aria-label="' + (settings.qMini ? 'Show the question' : 'Hide the question') + '">' + ic(settings.qMini ? 'expand' : 'minus') + '</button>';
-    $('q-count').textContent = hw || questions.length > 1 ? 'Question ' + (qi + 1) + ' of ' + questions.length : questions.length ? 'Your question' : 'Free practice';
+    $('q-count').textContent = act || questions.length > 1 ? 'Question ' + (qi + 1) + ' of ' + questions.length : questions.length ? 'Your question' : 'Free practice';
     $('q-prev').disabled = qi <= 0; $('q-next').disabled = qi >= questions.length - 1;
     $('q-prev').hidden = $('q-next').hidden = questions.length < 2;
     document.title = (title ? title + ' · ' : '') + 'Whiteboard · Markov.ink';
   }
+  function answerFeedback(saved, it) {
+    if (!saved) return '';
+    if (noHints) return 'Saved. You see how it went when you finish.';
+    if (saved.ok) return '<span class="ok">' + ic('check') + 'Correct</span>';
+    return '<span class="no">Not yet.</span> ' + esc(saved.why || 'Look at your steps again, or ask for help.');
+  }
+  $('question').addEventListener('submit', function (e) {
+    if (e.target.id !== 'qans') return;
+    e.preventDefault();
+    var it = currentItem(), v = $('ans-in').value.trim();
+    if (!v) { $('qfb').textContent = 'Type your answer first.'; $('ans-in').focus(); return; }
+    var res = PB.check(it, v);
+    if (!res) { $('qfb').textContent = 'I could not read that. Try a form like ' + PB.placeholder(it).replace('Like ', '').replace('Your answer', '19') + '.'; return; }
+    attempt.answers[qi] = { v: v.slice(0, 40), ok: res.ok, why: res.why || '' };
+    saveAttempt();
+    $('qfb').innerHTML = answerFeedback(attempt.answers[qi], it);
+    if (noHints) { if (qi < questions.length - 1) setTimeout(function () { goTo(qi + 1); }, 600); else subtitle('All answers saved. Press Finish when you are ready.', 'tutor'); return; }
+    if (res.ok) {
+      var last = qi >= questions.length - 1 - extra;
+      tutorSays(last ? 'Correct. That was the last one. Press Finish when you are ready.' : 'Correct. On to the next one when you are ready.');
+      if (exitFocus) exitFocus(false);
+    } else if (!res.why) {
+      subtitle('Not yet. Look back at each step, or tap I need help.', 'tutor');
+    }
+  });
   $('question').addEventListener('click', function (e) {
+    if (e.target.closest('#q-yourturn')) { goTo(qi + 1); return; }
     if (e.target.closest('#q-toggle')) { settings.qMini = !settings.qMini; saveSettings(); renderQuestion(); $('q-toggle').focus(); }
   });
   function goTo(i) {
@@ -859,7 +951,7 @@
     exitFocus(false);
     qi = i; renderQuestion(); loadBoard(); markActivity();
     subtitle('', 'tutor'); cursorPark();
-    if (hw) history.push({ role: 'you', text: '(Moved to question ' + (qi + 1) + ')' });
+    if (act) history.push({ role: 'you', text: '(Moved to question ' + (qi + 1) + ')' });
   }
   $('q-prev').innerHTML = ic('left'); $('q-next').innerHTML = ic('right');
   $('q-prev').addEventListener('click', function () { goTo(qi - 1); });
@@ -951,13 +1043,101 @@
     if (!e.target.closest('#menu, #menu-btn, #tool-pop, #tools')) closePops();
   });
 
+  /* ---------- finishing an activity ---------- */
+  // The student looks back over the set and says how it went. That review is what
+  // makes the activity count: points, the streak, and evidence for the topic.
+  var finishBtn = $('finish-btn'), dlg = $('finish-dlg'), rating = null;
+  function realItems() { return items.map(function (it, i) { return { it: it, i: i }; }).filter(function (x) { return !x.it.example && x.i < questions.length - extra; }); }
+  function scoreSummary() {
+    var withAns = realItems().filter(function (x) { return x.it.answer != null; });
+    var correct = withAns.filter(function (x) { var a = attempt.answers[x.i]; return a && a.ok; }).length;
+    var answered = withAns.filter(function (x) { return attempt.answers[x.i]; }).length;
+    return { total: withAns.length, correct: correct, answered: answered };
+  }
+  function openFinish() {
+    if (!act || demo.on) return;
+    T.voice.stopSpeaking(); exitFocus(false); closePops();
+    rating = null;
+    var sc = scoreSummary(), list = realItems();
+    var rows = list.map(function (x, k) {
+      var a = attempt.answers[x.i], st;
+      if (x.it.answer == null) st = '<span class="st">Worked on the board</span>';
+      else if (!a) st = '<span class="st none">No answer</span>';
+      else if (a.ok) st = '<span class="st ok">' + ic('check') + 'Correct</span>';
+      else st = '<span class="st no">Not yet</span>' + (noHints ? '<small>Answer: ' + esc(PB.answerText(x.it)) + '</small>' : '');
+      return '<li><b>' + (k + 1) + '</b><span class="q">' + esc(mathText(x.it.text)) + '</span>' + st + '</li>';
+    }).join('');
+    var missing = sc.total - sc.answered;
+    dlg.innerHTML = '<form class="fin" id="fin-form" novalidate>' +
+      '<h2 id="fin-title">Look back before you finish</h2>' +
+      '<p class="lead">' + (sc.total ? sc.correct + ' of ' + sc.total + ' correct · ' : '') + (noHints ? 'No hints in a check' : attempt.hints + ' hint' + (attempt.hints === 1 ? '' : 's') + ' used') + '</p>' +
+      '<ol class="fin-list">' + rows + '</ol>' +
+      (missing > 0 ? '<p class="fin-note">' + missing + ' question' + (missing === 1 ? ' has' : 's have') + ' no answer yet. You can still finish, or keep working.</p>' : '') +
+      '<fieldset class="fin-rate"><legend>How did it go?</legend>' +
+      [['got', 'I can do these on my own'], ['mostly', 'Mostly, with some help'], ['confused', 'Still confusing']].map(function (r) {
+        return '<label><input type="radio" name="rate" value="' + r[0] + '"><span>' + r[1] + '</span></label>';
+      }).join('') + '</fieldset>' +
+      '<p class="fin-err" id="fin-err" aria-live="polite"></p>' +
+      '<div class="fin-actions"><button type="button" class="bb-chip" id="fin-keep">Keep working</button><button type="submit" class="bb-chip dark" id="fin-go">Finish</button></div></form>';
+    dlg.showModal();
+    var first = dlg.querySelector('input[name=rate]'); if (first) first.focus();
+    dlg.querySelectorAll('input[name=rate]').forEach(function (r) { r.addEventListener('change', function () { rating = r.value; $('fin-err').textContent = ''; }); });
+    $('fin-keep').addEventListener('click', function () { dlg.close(); });
+    $('fin-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (!rating) { $('fin-err').textContent = 'Choose how it went first.'; dlg.querySelector('input[name=rate]').focus(); return; }
+      completeActivity(sc);
+    });
+  }
+  function dominantTopic() {
+    if (topicId) return topicId;
+    var c = {}; items.forEach(function (it) { if (it.topicId) c[it.topicId] = (c[it.topicId] || 0) + 1; });
+    var best = null; Object.keys(c).forEach(function (k) { if (!best || c[k] > c[best]) best = k; });
+    return best;
+  }
+  function completeActivity(sc) {
+    var success = sess.kind === 'independent'
+      ? (sc.total ? sc.correct / sc.total >= 2 / 3 : rating === 'got')
+      : rating !== 'confused';
+    // One topic: the result belongs to it. Several topics: each gets its own result.
+    var byTopic = {};
+    realItems().forEach(function (x) { if (!x.it.topicId) return; var t = byTopic[x.it.topicId] = byTopic[x.it.topicId] || { n: 0, ok: 0 }; t.n++; if (x.it.answer != null && attempt.answers[x.i] && attempt.answers[x.i].ok) t.ok++; else if (x.it.answer == null && rating !== 'confused') t.ok++; });
+    var topics = Object.keys(byTopic), multi = !topicId && topics.length > 1;
+    var tid = multi ? null : dominantTopic(), res = { points: 0 };
+    var topicResults = multi ? topics.map(function (t) { return { topicId: t, success: sess.kind === 'independent' ? byTopic[t].ok === byTopic[t].n : rating !== 'confused' }; }) : null;
+    try {
+      res = L.recordCompletion({ courseId: courseId, activityId: act.id, attemptId: attempt.id, topicId: tid, topicResults: topicResults, kind: sess.kind, reviewed: true, hintsUsed: attempt.hints, success: success });
+    } catch (e) {}
+    endAttempt();
+    var st = L.streak(), ev = tid ? L.topicEvidence(courseId, tid) : null, today = L.pointsToday(), goal = L.dailyGoal();
+    var again = act.type === 'topic' || act.type === 'test-step';
+    dlg.innerHTML = '<div class="fin done">' +
+      '<span class="fin-badge" aria-hidden="true">' + ic('check') + '</span>' +
+      '<h2 id="fin-title">' + (res.points ? '+' + res.points + ' practice points' : 'Finished') + '</h2>' +
+      '<p class="lead">' + (sess.kind === 'independent' ? (success ? 'Nice. This counts as independent evidence.' : 'This check showed something to review. That is useful to know.') : 'Finished with help. Looking back over it is what makes it stick.') + '</p>' +
+      '<ul class="fin-facts">' +
+      '<li><b>' + st.current + '</b><span>day streak</span></li>' +
+      '<li><b>' + today + '</b><span>points today' + (today >= goal ? ', goal met' : ' of ' + goal) + '</span></li>' +
+      (ev ? '<li><b>' + esc(ev.label) + '</b><span>' + esc(topicTitle(tid) || 'this topic') + '</span></li>' : '') +
+      (multi ? topics.slice(0, 4).map(function (t) { var e2 = L.topicEvidence(courseId, t); return '<li><b>' + esc(e2.label) + '</b><span>' + esc(topicTitle(t) || t) + '</span></li>'; }).join('') : '') + '</ul>' +
+      '<div class="fin-actions">' + (again ? '<button type="button" class="bb-chip" id="fin-again">Try a new set</button>' : '') +
+      '<a class="bb-chip dark" href="' + esc(backHref) + '">Back to course' + ic('right') + '</a></div></div>';
+    var ag = $('fin-again'); if (ag) ag.addEventListener('click', function () { location.reload(); });
+    var back = dlg.querySelector('a'); if (back) back.focus();
+    finishBtn.hidden = true;
+    renderActions();
+    dlg.addEventListener('cancel', function (e) { e.preventDefault(); location.href = backHref; }, { once: true });
+  }
+  finishBtn.addEventListener('click', openFinish);
+
   /* ---------- a short demo that plays itself ---------- */
   var demo = { on: false, done: false, saved: null, run: 0 };
   function startDemo() {
     exitFocus(false); $('chat').hidden = true; T.voice.stopSpeaking();
-    if (!demo.on) demo.saved = { questions: questions, qi: qi, objs: objs, marks: marks, extra: extra, history: history };
+    if (!demo.on) demo.saved = { questions: questions, items: items, qi: qi, objs: objs, marks: marks, extra: extra, history: history };
+    finishBtn.hidden = true;
     demo.on = true; demo.done = false; var run = ++demo.run;
-    questions = ['5x ' + MINUS + ' 4 = 21']; qi = 0; extra = 0; objs = []; marks = []; history = [];
+    questions = ['5x ' + MINUS + ' 4 = 21']; items = [{ text: questions[0] }]; qi = 0; extra = 0; objs = []; marks = []; history = [];
     renderQuestion(); redraw(); renderMarks(); renderActions(); idleStatus(); cursorPark();
     canvas.style.pointerEvents = 'none';
     var line = function (text, x, y) {
@@ -988,8 +1168,9 @@
   function endDemo() {
     if (!demo.on) return;
     demo.run++; demo.on = false; demo.done = false;
-    var s = demo.saved || { questions: [], qi: 0, objs: [], marks: [], extra: 0, history: [] };
-    questions = s.questions; qi = s.qi; objs = s.objs; marks = s.marks; extra = s.extra; history = s.history;
+    var s = demo.saved || { questions: [], items: [], qi: 0, objs: [], marks: [], extra: 0, history: [] };
+    questions = s.questions; items = s.items || questions.map(function (t) { return { text: t }; }); qi = s.qi; objs = s.objs; marks = s.marks; extra = s.extra; history = s.history;
+    finishBtn.hidden = !act;
     canvas.style.pointerEvents = '';
     exitFocus(false); renderQuestion(); redraw(); renderMarks(); renderActions(); renderChat(); idleStatus(); cursorPark();
     subtitle(questions.length ? 'Your turn. Start writing whenever you are ready.' : 'Your turn. Write a problem, or tap Practice for one.', 'tutor');
@@ -997,21 +1178,25 @@
   }
 
   /* ---------- start ---------- */
-  $('back').innerHTML = ic('back') + '<span>' + (hw ? 'Back to homework' : 'Back') + '</span>';
+  var backLabel = !act ? 'Back' : act.type === 'homework' || act.type === 'assignment' ? 'Back to homework' : act.type === 'test-step' ? 'Back to test plan' : 'Back to topic';
+  $('back').innerHTML = ic('back') + '<span>' + backLabel + '</span>';
   $('back').setAttribute('href', backHref);
-  $('back').setAttribute('aria-label', hw ? 'Back to homework' : 'Back to your courses');
+  $('back').setAttribute('aria-label', act ? backLabel : 'Back to your courses');
   window.addEventListener('resize', function () { resize(); if (focus.on) enterFocus(focus.rect, $('focus-line') ? $('focus-line').textContent : ''); });
   resize(); renderTools(); renderQuestion(); renderActions(); renderChat(); loadBoard(); markActivity();
+  finishBtn.hidden = !act;
   setStatus('thinking', 'Getting ready');
   cursorEl.classList.add('away');
   T.init().then(function () {
     idleStatus(); cursorPark();
     if (params.get('tour') === '1') { startDemo(); return; }
-    subtitle(T.isLive()
-      ? (questions.length ? 'Start writing. I will watch and help when you ask.' : 'Write a problem, or tap Practice for one.')
+    subtitle(noHints ? 'This is a check. Work on the board, type each answer, then press Finish. Feedback comes at the end.'
+      : currentItem().example ? 'Read the worked example, then press Your turn.'
+      : act ? 'Work on the board' + (currentItem().answer != null ? ' and type your answer in the box' : '') + '. Ask for help any time, and press Finish when you are done.'
+      : T.isLive() ? (questions.length ? 'Start writing. I will watch and help when you ask.' : 'Write a problem, or tap Practice for one.')
       : 'Demo replies for now: I give general hints but cannot read handwriting yet. Try the demo in the menu.', 'tutor');
   });
   if (document.fonts && document.fonts.load) document.fonts.load('600 26px Caveat').then(function () { redraw(); renderMarks(); });
 
-  window.MarkovBoard = { _test: { compile: compile, state: function () { return { objs: objs, marks: marks, focus: focus.on, qi: qi, questions: questions, tool: tool, demo: demo.on }; }, askTutor: askTutor, startDemo: startDemo, placeFree: placeFree } };
+  window.MarkovBoard = { _test: { item: function () { return currentItem(); }, compile: compile, state: function () { return { objs: objs, marks: marks, focus: focus.on, qi: qi, questions: questions, tool: tool, demo: demo.on }; }, askTutor: askTutor, startDemo: startDemo, placeFree: placeFree } };
 })();

@@ -92,6 +92,7 @@
     if (req.image) parts.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: req.image.data } });
     parts.push({ type: 'text', text:
       'Question: ' + (req.question || '(the student is choosing their own problem)') + '\n' +
+      (req.topic ? 'Topic: ' + req.topic + String.fromCharCode(10) : '') +
       'Board picture: ' + (req.image ? req.image.w + ' x ' + req.image.h + ' pixels' : 'none') + '\n' +
       'Request: ' + ASKS[req.kind] + (req.text ? '\nThe student said: "' + req.text.slice(0, 400) + '"' : '') });
     var msgs = [];
@@ -187,11 +188,13 @@
     }
     if (kind === 'help') {
       if (lin) return { say: 'What is being done to x here? Undo the ' + (lin.op === '+' ? 'adding' : 'taking away') + ' first, the same on both sides.', actions: sd ? [{ type: 'diagram', kind: 'balance', left: pretty(sd.left), right: pretty(sd.right), caption: 'both sides stay equal' }] : [] };
+      if (req.hints) return { say: req.hints[0], actions: sd ? [{ type: 'diagram', kind: 'balance', left: pretty(sd.left), right: pretty(sd.right), caption: 'keep it balanced' }] : [] };
       if (sd) return { say: 'Think of the two sides as a balance. Whatever you do to one side, do to the other.', actions: [{ type: 'diagram', kind: 'balance', left: pretty(sd.left), right: pretty(sd.right), caption: 'keep it balanced' }] };
       return { say: 'Start by writing down what you know and what you need to find. Which step feels hardest?', actions: [] };
     }
     if (kind === 'stuck') {
       if (lin) return { say: (lin.op === '+' ? 'Take away ' : 'Add ') + lin.b + ' on both sides. What is left on the x side?', actions: [{ type: 'note', text: (lin.op === '+' ? MINUS : '+') + ' ' + lin.b + ' on both sides' }] };
+      if (req.hints) return { say: req.hints[1], actions: [] };
       return { say: 'Try just the first small step, and write it on its own line.', actions: [] };
     }
     if (kind === 'showme') {
@@ -202,6 +205,7 @@
         }
         return { say: 'Here are both sides as a balance. Do the same thing to each pan.', actions: [{ type: 'diagram', kind: 'balance', left: pretty(sd.left), right: pretty(sd.right), caption: 'same on both sides' }] };
       }
+      if (req.hints) return { say: req.hints[2], actions: [] };
       return { say: 'Draw a quick picture of the problem. What do the numbers stand for?', actions: [] };
     }
     return { say: 'Keep going. I am here if you need me.', actions: [] };

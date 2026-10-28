@@ -79,6 +79,14 @@ Rules worth knowing:
   to `/api/tutor` and Claude answers with JSON actions; without one, demo replies give general
   hints and say they cannot read handwriting. The menu has a 30 second demo. Boards are saved
   in `markov.board.v1`; the previous whiteboard is unchanged at `whiteboard.html`.
+- Every activity runs on the board (`whiteboard-v2?c=<course>&act=<activity id>`): Learn the idea
+  (a worked example, then your turn), Practice with help, Check myself (no hints, answers saved
+  for the end), test plan steps, homework, and assignments. `learn-assets/problems.js` makes
+  fresh problems for the 8 Algebra I topics from a seed per attempt and checks typed answers
+  (numbers, x = n, equivalent expressions, inequalities). "Finish" opens a short look-back: what
+  was right, hints used, and "How did it go?". That review calls `recordCompletion`, so points,
+  the streak, and topic evidence update; a set covering several topics leaves one result per
+  topic. Attempts in progress are kept in `markov.attempts.v1`.
 
 Demo mode: `course.html?c=<id>&demo=1` shows a labeled banner, uses a separate key
 (`markov.learning.demo.v1`), and adds simulation controls on the progress page. Nothing in demo

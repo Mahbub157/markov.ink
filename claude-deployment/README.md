@@ -57,6 +57,15 @@ Rules worth knowing:
   uploaded and the file is not saved; only the questions the student keeps are stored.
   Printed sheets read well; handwriting does not, and symbols can be misread, so students check
   each card.
+- Optional Claude vision: `api/read-questions.js` sends the page images to Claude
+  (`claude-opus-5-5`, structured JSON output) and gets back only the questions, with sub-parts,
+  shared directions, and a list of what was left out (names, student working, answers, scores,
+  teacher notes, page headers). It reports honestly when a page has no questions or cannot be
+  read, and never solves anything. The page shows a "Read with Claude" switch only when
+  `GET /api/read-questions` says the key is set; if the call fails, the on-device reader takes
+  over. Limits: 5 pages, about 1.2 MB per page image, allowed origins only, 12 reads per
+  10 minutes per visitor. Needs `ANTHROPIC_API_KEY` and the functions in this folder to be live
+  (`npm install` here pins `@anthropic-ai/sdk`).
 
 Demo mode: `course.html?c=<id>&demo=1` shows a labeled banner, uses a separate key
 (`markov.learning.demo.v1`), and adds simulation controls on the progress page. Nothing in demo

@@ -303,7 +303,7 @@
     c.homework[id] = {
       id: id, title: str(hw.title, 80) || 'Untitled classwork',
       source: ['paste', 'file', 'file-read', 'demo'].indexOf(hw.source) !== -1 ? hw.source : 'paste',
-      readMethod: hw.readMethod === 'ocr' || hw.readMethod === 'pdf-text' ? hw.readMethod : null,
+      readMethod: ['ocr', 'pdf-text', 'claude'].indexOf(hw.readMethod) >= 0 ? hw.readMethod : null,
       file: hw.file ? { name: str(hw.file.name, 120), type: str(hw.file.type, 60), size: Number(hw.file.size) || 0 } : null,
       demo: hw.demo === true,
       // questions keep their line breaks so parts like (a) and (b) stay separate

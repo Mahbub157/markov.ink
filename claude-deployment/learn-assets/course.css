@@ -204,6 +204,10 @@
 .file-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
 .file-btn { cursor: pointer; position: relative; }
 .file-btn:focus-within { outline: 3px solid var(--blue-bright); outline-offset: 2px; }
+.claude-toggle { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 14px; padding: 10px 12px; border-radius: 12px; background: var(--paper-2); font-size: 14px; color: var(--ink-2); cursor: pointer; }
+.claude-toggle input { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--blue); flex: none; }
+.claude-toggle strong { color: var(--ink); margin-right: 4px; }
+.claude-toggle:focus-within { outline: 3px solid var(--blue-bright); outline-offset: 2px; }
 .read-progress { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; font-weight: 600; color: var(--ink-2); }
 .read-progress .track { height: 8px; border-radius: 4px; background: var(--paper-2); overflow: hidden; }
 .read-progress .track i { display: block; height: 100%; border-radius: 4px; background: var(--blue); transition: width .3s var(--ease); }

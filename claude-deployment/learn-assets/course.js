@@ -348,6 +348,14 @@
   /* ---------- Bring classwork ---------- */
 
   var draftHw = null;
+  // True once the server says Claude vision is set up (checked once per page load).
+  var claudeReady = false;
+  if (window.MarkovReader && window.MarkovReader.claudeAvailable) {
+    window.MarkovReader.claudeAvailable().then(function (ok) {
+      claudeReady = ok;
+      if (ok && draftHw && draftHw.method === 'file' && !(draftHw.read && draftHw.read.busy) && document.getElementById('method-body')) renderMethod();
+    });
+  }
 
   function topicOptions(selected) {
     var opts = '<option value="">Not sure yet</option>';
@@ -422,17 +430,19 @@
       return;
     }
     var r = d.read;
+    var claudeOn = claudeReady && d.useClaude !== false;
     box.innerHTML = '<div class="file-pick">' +
+      (claudeReady ? '<label class="claude-toggle"><input type="checkbox" id="hw-claude"' + (claudeOn ? ' checked' : '') + '><span><strong>Read with Claude</strong> Finds only the questions and leaves out names, your working, answers, and notes.</span></label>' : '') +
       '<div class="file-buttons"><label class="btn btn-primary file-btn">' + U.icon('plus') + 'Choose a photo or PDF<input type="file" id="hw-file" accept="image/png,image/jpeg,image/webp,application/pdf" class="sr-only"></label>' +
       '<label class="btn btn-ghost file-btn">' + ART.camera + 'Take a photo<input type="file" id="hw-cam" accept="image/*" capture="environment" class="sr-only"></label></div>' +
       '<p class="input-help" style="margin:10px 0 0">' + (d.file ? 'Selected: <strong>' + esc(d.file.name) + '</strong>' : 'Printed worksheets and textbook pages read best. A PDF with real text reads exactly.') + '</p>' +
       '<div id="read-status" aria-live="polite"></div></div>' +
-      (r && r.done ? '<div class="note' + (r.method === 'ocr' && r.confidence < 70 ? ' warn' : '') + '" style="margin-top:12px">' + U.icon('check') + '<p>' +
-        (r.method === 'pdf-text' ? '<strong>Read from the PDF text.</strong> ' : '<strong>Read with text recognition.</strong> ') +
-        (r.questions ? 'Found ' + r.questions + ' question' + (r.questions === 1 ? '' : 's') + '. ' : '') +
-        (r.method === 'ocr' ? 'Check each one against your sheet and fix anything misread.' : 'Check that each question is complete.') +
-        (r.truncated ? ' Only the first 5 pages were read.' : '') + '</p></div>' : '') +
-      '<p class="input-help" style="margin-top:10px">Your file is read on this device and is not uploaded or saved. Only the questions you keep are saved.</p>';
+      (r && r.done ? readNote(r) : '') +
+      '<p class="input-help" style="margin-top:10px">' + (claudeOn
+        ? 'The page image is sent to Anthropic so Claude can find the questions. Markov does not keep the file. Only the questions you keep are saved.'
+        : 'Your file is read on this device and is not uploaded or saved. Only the questions you keep are saved.') + '</p>';
+    var tog = document.getElementById('hw-claude');
+    if (tog) tog.addEventListener('change', function () { d.useClaude = tog.checked; renderMethod(); });
     ['hw-file', 'hw-cam'].forEach(function (id) {
       document.getElementById(id).addEventListener('change', function (e) {
         var f = e.target.files && e.target.files[0];
@@ -441,8 +451,33 @@
     });
   }
 
+  var IGNORED_WORDS = { name_or_date: 'name and date', student_work: 'written working', answer_or_score: 'answers and scores', teacher_note: 'teacher notes', page_furniture: 'page headers', unrelated_text: 'other writing', other: 'other writing' };
+
+  function readNote(r) {
+    var n = r.questions, found = n ? 'Found ' + n + ' question' + (n === 1 ? '' : 's') + '. ' : '';
+    var warn = (r.method === 'ocr' && r.confidence < 70) || r.unclear || r.fallback;
+    var head, body;
+    if (r.method === 'claude') {
+      var left = [];
+      (r.ignored || []).forEach(function (k) { var w = IGNORED_WORDS[k] || IGNORED_WORDS.other; if (left.indexOf(w) < 0) left.push(w); });
+      head = '<strong>Read with Claude.</strong> ';
+      body = found + (left.length ? 'Left out: ' + esc(left.join(', ')) + '. ' : '') +
+        (r.directions ? 'Directions: ' + esc(r.directions) + ' ' : '') +
+        (r.unclear ? r.unclear + ' had a hard-to-read part, marked [unclear]. ' : '') +
+        (r.figures ? 'Some questions use a diagram or table, so keep the sheet nearby. ' : '') +
+        (n ? 'Check each one against your sheet.' : '');
+    } else {
+      head = (r.fallback ? '<strong>Claude could not read it this time, so it was read on this device.</strong> ' : '') +
+        (r.method === 'pdf-text' ? '<strong>Read from the PDF text.</strong> ' : '<strong>Read with text recognition.</strong> ');
+      body = found + (r.method === 'ocr' ? 'Check each one against your sheet and fix anything misread.' : 'Check that each question is complete.');
+    }
+    return '<div class="note' + (warn ? ' warn' : '') + '" style="margin-top:12px">' + U.icon('check') + '<p>' + head + body +
+      (r.truncated ? ' Only the first 5 pages were read.' : '') + '</p></div>';
+  }
+
   function readFile(f) {
     var d = draftHw;
+    var useClaude = claudeReady && d.useClaude !== false;
     d.file = { name: f.name || 'Photo', type: f.type, size: f.size };
     d.read = { busy: true };
     d.demo = false;
@@ -458,13 +493,20 @@
     show({ text: 'Starting' });
     var form = document.getElementById('hw-form');
     form.setAttribute('aria-busy', 'true');
-    window.MarkovReader.read(f, show).then(function (res) {
+    window.MarkovReader.read(f, show, { claude: useClaude }).then(function (res) {
       form.removeAttribute('aria-busy');
-      if (res.title && (!d.title || d.title === f.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 80))) { d.title = res.title; document.getElementById('hw-title').value = d.title; }
-      d.read = { done: true, method: res.method, confidence: Math.round(res.confidence || 100), questions: res.questions.length, truncated: !!res.truncated };
+      if (res.title && (!d.title || d.title === (f.name || 'Photo').replace(/\.[a-z0-9]+$/i, '').slice(0, 80))) { d.title = res.title.slice(0, 80); document.getElementById('hw-title').value = d.title; }
+      d.read = { done: true, method: res.method, confidence: Math.round(res.confidence || 100), questions: res.questions.length, truncated: !!res.truncated,
+        fallback: res.fallback || null, directions: res.directions || '', unclear: res.unclear || 0, figures: res.figures || 0,
+        ignored: (res.ignored || []).map(function (i) { return i.kind; }) };
       setQuestions(res.questions);
       renderMethod();
-      if (!res.questions.length) showErr('No questions could be found in that file. Try a clearer photo, or type them under “Type or paste”.', null);
+      if (!res.questions.length) {
+        showErr(res.method === 'claude' && res.message ? res.message
+          : res.method === 'claude' && res.status === 'unreadable' ? 'That page was too hard to read. Try a brighter, closer photo.'
+          : res.method === 'claude' ? 'Claude did not find any questions on that page. Check it is the right page, or type them under “Type or paste”.'
+          : 'No questions could be found in that file. Try a clearer photo, or type them under “Type or paste”.', null);
+      }
       var first = document.querySelector('.qcard textarea'); if (first) first.focus();
     }).catch(function (err) {
       form.removeAttribute('aria-busy');
@@ -586,7 +628,7 @@
     var topics = {};
     w.questions.forEach(function (q) { if (q.topicId) topics[q.topicId] = (topics[q.topicId] || 0) + 1; });
     var src = w.source === 'demo' ? '<span class="badge-demo">Demo worksheet</span> Sample questions, not from a file.'
-      : w.source === 'file-read' ? 'Read from ' + esc(w.file ? w.file.name : 'your file') + (w.readMethod === 'ocr' ? ' with text recognition.' : '.') + ' The file itself was not saved.'
+      : w.source === 'file-read' ? 'Read from ' + esc(w.file ? w.file.name : 'your file') + (w.readMethod === 'ocr' ? ' with text recognition.' : w.readMethod === 'claude' ? ' with Claude.' : '.') + ' The file itself was not saved.'
       : w.source === 'file' ? 'File: ' + esc(w.file ? w.file.name : '') + '. No questions were kept from it.'
       : 'Questions you typed or pasted.';
     var main = '<section><h2>Source</h2><p style="margin:0;color:var(--ink-2)">' + src + '</p>' +

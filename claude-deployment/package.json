@@ -1,0 +1,8 @@
+{
+  "name": "markov-ink-site",
+  "private": true,
+  "description": "Static site plus serverless functions. No build step; dependencies are for api/ functions only.",
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.133.0"
+  }
+}

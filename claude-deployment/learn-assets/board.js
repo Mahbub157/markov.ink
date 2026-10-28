@@ -631,7 +631,8 @@
   function subtitle(text, who) {
     var s = $('sub');
     s.className = 'bb-sub' + (who === 'you' ? ' you' : '');
-    s.innerHTML = text ? '<span class="who">' + (who === 'you' ? 'You' : 'Tutor') + '</span>' + esc(text) : '';
+    s.innerHTML = text ? '<span class="clip"><span class="who">' + (who === 'you' ? 'You' : 'Tutor') + '</span>' + esc(text) + '</span>' : '';
+    s.title = text || '';
     if (focus.on) $('focus-line').textContent = who === 'you' ? '' : text;
   }
   function logMsg(role, text) {
@@ -668,10 +669,10 @@
       return;
     }
     a.innerHTML =
-      '<button type="button" class="bb-chip" data-act="help">' + ic('help') + 'I need help</button>' +
+      '<button type="button" class="bb-chip" data-act="help" aria-label="I need help">' + ic('help') + '<span class="lbl-long">I need help</span><span class="lbl-short" aria-hidden="true">Help</span></button>' +
       '<button type="button" class="bb-chip" data-act="check">' + ic('check') + '<span>Check<span class="lbl-long"> my work</span></span></button>' +
       '<button type="button" class="bb-mic" id="mic" data-act="mic" aria-pressed="' + listening + '" aria-label="' + (listening ? 'Stop listening' : 'Talk to your tutor') + '" title="Talk to your tutor (M)">' + ic('mic') + '</button>' +
-      '<button type="button" class="bb-chip practice" data-act="practice">' + ic('spark') + 'Practice</button>' +
+      '<button type="button" class="bb-chip practice" data-act="practice" aria-label="Practice question">' + ic('spark') + '<span class="lbl-mid">Practice</span></button>' +
       '<button type="button" class="bb-chip icon-only has-badge" data-act="chat" aria-label="Conversation' + (unread ? ', ' + unread + ' new' : '') + '" title="Conversation">' + ic('chat') + (unread ? '<span class="bb-badge" aria-hidden="true">' + unread + '</span>' : '') + '</button>';
   }
   $('dock').addEventListener('click', function (e) {

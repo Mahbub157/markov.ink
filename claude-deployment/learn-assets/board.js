@@ -664,16 +664,17 @@
     var a = $('actions');
     if (demo.on) {
       a.innerHTML = demo.done
-        ? '<button type="button" class="bb-chip" data-act="replay">' + ic('play') + 'Watch again</button><button type="button" class="bb-chip dark" data-act="end-demo">Back to my board</button>'
-        : '<button type="button" class="bb-chip" data-act="end-demo">' + ic('close') + 'Stop the demo</button>';
+        ? '<div class="bb-grp left"><button type="button" class="bb-chip" data-act="replay">' + ic('play') + 'Watch again</button></div><div class="bb-grp right"><button type="button" class="bb-chip dark" data-act="end-demo">Back to my board</button></div>'
+        : '<div class="bb-grp left"></div><div class="bb-grp right"><button type="button" class="bb-chip" data-act="end-demo">' + ic('close') + 'Stop the demo</button></div>';
       return;
     }
-    a.innerHTML =
+    // Help and check sit left of the tutor's reply; talking, practice, and the conversation sit right.
+    a.innerHTML = '<div class="bb-grp left">' +
       '<button type="button" class="bb-chip" data-act="help" aria-label="I need help">' + ic('help') + '<span class="lbl-long">I need help</span><span class="lbl-short" aria-hidden="true">Help</span></button>' +
-      '<button type="button" class="bb-chip" data-act="check">' + ic('check') + '<span>Check<span class="lbl-long"> my work</span></span></button>' +
+      '<button type="button" class="bb-chip" data-act="check">' + ic('check') + '<span>Check<span class="lbl-long"> my work</span></span></button></div><div class="bb-grp right">' +
       '<button type="button" class="bb-mic" id="mic" data-act="mic" aria-pressed="' + listening + '" aria-label="' + (listening ? 'Stop listening' : 'Talk to your tutor') + '" title="Talk to your tutor (M)">' + ic('mic') + '</button>' +
       '<button type="button" class="bb-chip practice" data-act="practice" aria-label="Practice question">' + ic('spark') + '<span class="lbl-mid">Practice</span></button>' +
-      '<button type="button" class="bb-chip icon-only has-badge" data-act="chat" aria-label="Conversation' + (unread ? ', ' + unread + ' new' : '') + '" title="Conversation">' + ic('chat') + (unread ? '<span class="bb-badge" aria-hidden="true">' + unread + '</span>' : '') + '</button>';
+      '<button type="button" class="bb-chip icon-only has-badge" data-act="chat" aria-label="Conversation' + (unread ? ', ' + unread + ' new' : '') + '" title="Conversation">' + ic('chat') + (unread ? '<span class="bb-badge" aria-hidden="true">' + unread + '</span>' : '') + '</button></div>';
   }
   $('dock').addEventListener('click', function (e) {
     var b = e.target.closest('[data-act]'); if (!b) return;

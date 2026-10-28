@@ -160,22 +160,28 @@
 /* ---------- dock: subtitles and actions ---------- */
 .bb-dock {
   position: absolute; z-index: 9; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%);
-  width: min(1040px, calc(100% - 32px));
-  display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 12px;
+  width: min(1280px, calc(100% - 32px));
+  display: grid; align-items: center; gap: 12px;
+  grid-template-columns: minmax(max-content, 1fr) minmax(0, 560px) minmax(max-content, 1fr);
+  grid-template-areas: "left sub right";
   pointer-events: none;
 }
 .bb-dock > * { pointer-events: auto; }
 .bb-sub {
   font-family: Inter, system-ui, sans-serif; font-size: 16px; font-weight: 500; line-height: 1.45; color: var(--ink);
   background: var(--card); border: 1px solid var(--hair); border-radius: 16px; box-shadow: var(--shadow);
-  padding: 9px 16px; text-align: left; flex: 0 1 auto; min-width: 0; max-width: 560px;
+  padding: 9px 16px; text-align: center; min-width: 0; max-width: 560px;
+  grid-area: sub; justify-self: center;
 }
 .bb-sub:empty { display: none; }
 .bb-sub .clip { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .bb-sub .who { font-size: 12px; font-weight: 600; color: var(--tutor); margin-right: 8px; }
 .bb-sub.you .who { color: var(--muted); }
 .bb-sub.you { color: var(--soft); }
-.bb-actions { display: flex; align-items: center; gap: 8px; flex: none; flex-wrap: nowrap; justify-content: center; }
+.bb-actions { display: contents; }
+.bb-grp { display: flex; align-items: center; gap: 8px; pointer-events: auto; }
+.bb-grp.left { grid-area: left; justify-self: start; }
+.bb-grp.right { grid-area: right; justify-self: end; }
 .bb-chip {
   min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--hair-strong); background: var(--card);
   font-size: 14px; font-weight: 500; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; box-shadow: var(--shadow);
@@ -198,6 +204,7 @@
 .bb-chip.has-badge { position: relative; }
 
 .bb-focus {
+  grid-column: 1 / -1; justify-self: center;
   width: 100%; max-width: 640px; background: var(--card); border: 1px solid var(--hair-strong); border-radius: 18px; box-shadow: var(--shadow-lift);
   padding: 14px; display: flex; flex-direction: column; gap: 12px;
 }
@@ -232,12 +239,19 @@
 .bb-send svg { width: 20px; height: 20px; }
 
 /* ---------- small screens ---------- */
+/* keep the two button groups about the same width so the reply stays centered */
+@media (max-width: 1100px) {
+  .bb-chip .lbl-long { display: none; }
+  .bb-chip .lbl-short { display: inline; }
+}
 /* not enough width for one row: the reply sits above the buttons */
 @media (max-width: 900px) {
-  .bb-dock { flex-direction: column; gap: 10px; width: min(620px, calc(100% - 24px)); }
-  .bb-sub { text-align: center; max-width: 100%; }
+  .bb-dock { width: min(620px, calc(100% - 24px)); gap: 10px 6px; grid-template-columns: 1fr 1fr; grid-template-areas: "sub sub" "left right"; }
+  .bb-sub { max-width: 100%; }
   .bb-sub .clip { -webkit-line-clamp: 3; }
-  .bb-actions { flex-wrap: wrap; }
+  .bb-grp.left { justify-self: end; }
+  .bb-grp.right { justify-self: start; }
+  .bb-grp { gap: 6px; }
 }
 @media (max-width: 640px) {
   .bb-status span { display: none; }
@@ -247,11 +261,9 @@
   .bb-tools { top: 70px; transform: none; }
   .bb-tool-pop { left: 70px; top: 70px !important; }
   .bb-sub { font-size: 15px; }
-  .bb-actions { gap: 6px; }
   .bb-chip { padding: 0 12px; font-size: 13px; }
   .bb-chip .lbl-long { display: none; }
   .bb-chip .lbl-short { display: inline; }
-  .bb-actions { flex-wrap: nowrap; }
 }
 @media (max-width: 420px) {
   .bb-chip.practice { padding: 0; width: 40px; justify-content: center; }

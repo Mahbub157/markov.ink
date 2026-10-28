@@ -92,7 +92,7 @@
       ? '<a class="toplink" href="learn">' + U.icon('close') + '<span>Cancel</span></a>'
       : (S.mode === 'new' && S.step !== 'start')
         ? '<a class="toplink" href="./">' + U.icon('close') + '<span>Save and exit</span></a>'
-        : '<a class="toplink" href="whiteboard">' + U.icon('board') + '<span>Whiteboard</span></a>';
+        : '<a class="toplink" href="whiteboard-v2">' + U.icon('board') + '<span>Whiteboard</span></a>';
     topbar.innerHTML = U.wordmark() + prog + exit;
   }
 

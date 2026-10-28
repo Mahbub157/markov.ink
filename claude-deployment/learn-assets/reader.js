@@ -2,8 +2,10 @@
    Turns a photo or PDF into separate questions, entirely in the browser:
    - PDFs with a text layer: text is read exactly with pdf.js.
    - Photos and scanned PDFs: text recognition (OCR) with Tesseract.js.
-   Nothing is uploaded. The libraries load only when a file is chosen.
-   Works best with printed worksheets; handwriting is not reliable here. */
+   The libraries load only when a file is chosen, and the file stays on the device.
+   Works best with printed worksheets; handwriting is not reliable here.
+   Optional: when /api/read-questions is set up, Claude vision reads the page instead
+   and leaves out anything that is not a question (see the Claude section below). */
 (function () {
   'use strict';
 
@@ -282,13 +284,119 @@
     }).then(function (r) { return { lines: r.lines, method: 'ocr', pages: 1, confidence: r.confidence }; });
   }
 
+  /* ---------- Claude vision (optional, server side) ---------- */
+
+  // When the site's /api/read-questions function has a key, page images go there and Claude
+  // picks out only the questions, leaving out names, student work, answers, and notes.
+  // If it is missing or fails, the on-device reader above is used instead.
+  var API = '/api/read-questions';
+  var MAX_SIDE = 1568;          // larger images are scaled down by the API anyway
+  var claudeCheck = null;
+
+  function claudeAvailable() {
+    if (!claudeCheck) {
+      claudeCheck = fetch(API, { method: 'GET', cache: 'no-store' }).then(function (r) {
+        if (!r.ok) return false;
+        return r.json().then(function (j) { return !!(j && j.ok && j.configured); });
+      }).catch(function () { return false; });
+    }
+    return claudeCheck;
+  }
+
+  function canvasToJpeg(source, w, h) {
+    var scale = Math.min(1, MAX_SIDE / Math.max(w, h));
+    var c = document.createElement('canvas');
+    c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+    var ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(source, 0, 0, c.width, c.height);
+    var data = c.toDataURL('image/jpeg', 0.85).split(',')[1] || '';
+    return { media_type: 'image/jpeg', data: data };
+  }
+
+  function photoImage(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () { URL.revokeObjectURL(url); resolve([canvasToJpeg(img, img.naturalWidth, img.naturalHeight)]); };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('image')); };
+      img.src = url;
+    });
+  }
+
+  function pdfImages(file, progress) {
+    return loadScript(LIBS.pdf).then(function () {
+      var lib = window.pdfjsLib;
+      lib.GlobalWorkerOptions.workerSrc = LIBS.pdfWorker;
+      return file.arrayBuffer().then(function (buf) { return lib.getDocument({ data: buf }).promise; });
+    }).then(function (doc) {
+      var n = Math.min(doc.numPages, MAX_PAGES), out = [], chain = Promise.resolve();
+      for (var i = 1; i <= n; i++) {
+        (function (i) {
+          chain = chain.then(function () {
+            progress({ phase: 'load', text: 'Preparing page ' + i + ' of ' + n, frac: (i - 1) / n * 0.3 });
+            return doc.getPage(i).then(renderPage).then(function (canvas) { out.push(canvasToJpeg(canvas, canvas.width, canvas.height)); });
+          });
+        })(i);
+      }
+      return chain.then(function () { return { images: out, truncated: doc.numPages > n }; });
+    });
+  }
+
+  function partLabel(l) {
+    l = String(l || '').trim();
+    if (!l) return '';
+    return /^\(.*\)$/.test(l) ? l : '(' + l.replace(/[.)]+$/, '') + ')';
+  }
+
+  // One question becomes one block of text, with its parts on their own lines.
+  function questionText(q) {
+    var lines = [];
+    if (q.text) lines.push(clean(q.text));
+    (q.parts || []).forEach(function (p) {
+      var t = clean(p.text || '');
+      if (t) lines.push((partLabel(p.label) + ' ' + t).trim());
+    });
+    return lines.join('\n');
+  }
+
+  function readWithClaude(file, isPdf, progress) {
+    progress({ phase: 'load', text: 'Preparing the page' });
+    return (isPdf ? pdfImages(file, progress) : photoImage(file).then(function (images) { return { images: images, truncated: false }; }))
+      .then(function (pages) {
+        progress({ phase: 'claude', text: 'Claude is finding the questions' });
+        return fetch(API, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ images: pages.images })
+        }).then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (j) {
+            if (!r.ok || !j.ok || !j.result) { var e = new Error('claude'); e.code = j.error || ('http_' + r.status); throw e; }
+            var res = j.result;
+            var qs = res.questions.map(questionText).filter(function (t) { return t; }).slice(0, 40);
+            return {
+              method: 'claude',
+              status: res.status,
+              message: res.message,
+              title: res.sheet_title,
+              directions: res.directions,
+              ignored: res.ignored || [],
+              unclear: res.questions.filter(function (q) { return q.legibility === 'partly_unclear'; }).length,
+              figures: res.questions.filter(function (q) { return q.has_figure; }).length,
+              questions: qs,
+              intro: [],
+              pages: pages.images.length,
+              truncated: pages.truncated,
+              confidence: 100
+            };
+          });
+        });
+      });
+  }
+
   /* ---------- Public ---------- */
 
-  function read(file, onProgress) {
-    var progress = onProgress || function () {};
-    var isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
-    var isImage = /^image\/(png|jpe?g|webp|gif|bmp)$/i.test(file.type);
-    if (!isPdf && !isImage) return Promise.reject(new Error('type'));
+  function readOnDevice(file, isPdf, progress) {
     return (isPdf ? readPdf(file, progress) : readImage(file, progress)).then(function (r) {
       var seg = segment(r.lines);
       r.questions = seg.questions; r.intro = seg.intro; r.title = seg.title;
@@ -296,8 +404,25 @@
     });
   }
 
+  // opts.claude: try Claude first when it is set up; fall back to this device if it fails.
+  function read(file, onProgress, opts) {
+    var progress = onProgress || function () {};
+    var isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    var isImage = /^image\/(png|jpe?g|webp|gif|bmp)$/i.test(file.type);
+    if (!isPdf && !isImage) return Promise.reject(new Error('type'));
+    if (!(opts && opts.claude)) return readOnDevice(file, isPdf, progress);
+    return readWithClaude(file, isPdf, progress).catch(function (err) {
+      return readOnDevice(file, isPdf, progress).then(function (r) {
+        r.fallback = (err && err.code) || 'error';
+        return r;
+      });
+    });
+  }
+
   window.MarkovReader = {
     read: read,
+    claudeAvailable: claudeAvailable,
+    questionText: questionText,
     segment: segment,
     fromText: function (text) { return segment(String(text || '').split(/\r?\n/)); },
     clean: clean

@@ -31,7 +31,7 @@
   /* ---------- Top bar ---------- */
 
   function renderTop() {
-    var right = '<a class="toplink" href="whiteboard">' + U.icon('board') + '<span>Whiteboard</span></a>';
+    var right = '<a class="toplink" href="whiteboard-v2">' + U.icon('board') + '<span>Whiteboard</span></a>';
     if (profile && profile.setupComplete) {
       right += '<button type="button" class="toplink" id="btn-profile" aria-haspopup="dialog">' + U.icon('user') + '<span>' + esc(firstName()) + '</span><span class="sr-only">, open learning profile</span></button>';
     }
@@ -78,7 +78,7 @@
           : 'Your own course. ' + esc(GOAL_START[d.goal] || '')) + '</p>' +
         '<div class="begin-actions">' +
         '<a class="btn btn-primary" href="' + courseHref(featured.id) + '">Open ' + esc(featured.title) + U.icon('right') + '</a>' +
-        '<a class="btn btn-ghost" href="whiteboard">' + U.icon('board') + 'Whiteboard prototype</a>' +
+        '<a class="btn btn-ghost" href="whiteboard-v2">' + U.icon('board') + 'Open the whiteboard</a>' +
         '</div></div>' +
         '<div class="begin-art">' + (isSchool ? '<span class="tag school">' + U.icon('school') + 'School course</span>' : '<span class="tag">' + U.icon('user') + 'Your course</span>') +
         U.glyph(featured.glyph) + '</div>' +
@@ -145,7 +145,7 @@
           : '<h1>Set up your learning space</h1><p>Tell Markov about your courses and your goal. It takes about two minutes, and you can change anything later.</p>') +
       '<div class="begin-actions">' +
       '<a class="btn btn-primary" href="onboarding">' + (draft ? 'Continue setup' : 'Get started') + U.icon('right') + '</a>' +
-      '<a class="btn btn-ghost" href="whiteboard">' + U.icon('board') + 'Open the whiteboard</a>' +
+      '<a class="btn btn-ghost" href="whiteboard-v2">' + U.icon('board') + 'Open the whiteboard</a>' +
       '</div></div>';
   }
 

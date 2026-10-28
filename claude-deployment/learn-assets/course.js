@@ -151,7 +151,7 @@
       '<div class="note">' + U.icon('board') + '<p>The learning workspace where you work through this activity is the next phase of Markov.ink. When it opens, this activity will start right here with the same rules.</p></div>' +
       '<p style="margin-top:14px;font-size:14px">Points start when you finish and review an activity in that workspace. Saving it does not earn points.</p>' +
       '<div class="sheet-actions"><button type="button" class="btn btn-primary" data-close autofocus>Got it</button>' +
-      '<a class="btn btn-ghost" href="whiteboard">' + U.icon('board') + 'Open the current whiteboard prototype</a></div>', trigger);
+      '<a class="btn btn-ghost" href="whiteboard-v2">' + U.icon('board') + 'Open the whiteboard</a></div>', trigger);
   }
 
   /* ---------- Course home ---------- */

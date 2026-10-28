@@ -971,8 +971,7 @@
       '<button type="button" role="menuitem" data-m="clear">' + ic('trash') + (clearArmed ? 'Tap again to clear your work' : 'Clear my work') + '</button>' +
       '<hr>' +
       '<button type="button" role="menuitem" data-m="download">' + ic('download') + 'Save the board as an image</button>' +
-      '<button type="button" role="menuitem" data-m="keys">' + ic('keys') + 'Keyboard shortcuts</button>' +
-      '<button type="button" role="menuitem" data-m="old">' + ic('board') + 'Open the previous whiteboard</button>';
+      '<button type="button" role="menuitem" data-m="keys">' + ic('keys') + 'Keyboard shortcuts</button>';
   }
   $('menu-btn').innerHTML = ic('more');
   $('menu-btn').addEventListener('click', function () {
@@ -1001,7 +1000,6 @@
     if (m === 'clear') { var prev = snapshot(); objs = []; pushUndo(prev); redraw(); saveSoon(); exitFocus(false); subtitle('Your work is cleared. Undo brings it back.', 'tutor'); }
     if (m === 'download') download();
     if (m === 'keys') { openChat(); history.push({ role: 'tutor', text: 'Shortcuts: P pen, H highlighter, E eraser, S shapes, T text, Ctrl+Z undo, Ctrl+Shift+Z redo, M mic, ? help, Esc leaves focus or closes panels.' }); renderChat(); }
-    if (m === 'old') location.href = 'whiteboard';
   });
   function download() {
     var c = document.createElement('canvas'); c.width = canvas.width; c.height = canvas.height;

@@ -38,7 +38,7 @@
 }
 .bb-icon:hover { background: var(--paper-2); color: var(--ink); }
 .bb-icon[disabled] { opacity: .35; cursor: default; background: none; }
-.bb-icon svg { width: 20px; height: 20px; }
+.bb-icon svg { width: 18px; height: 18px; }
 .bb-status { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; color: var(--soft); white-space: nowrap; padding: 6px 12px; border-radius: 999px; background: var(--paper); }
 .bb-status i { width: 8px; height: 8px; border-radius: 50%; background: #16A34A; flex: none; }
 .bb-status[data-state="listening"] i { background: var(--pen-red); animation: bb-pulse 1.2s infinite; }
@@ -129,7 +129,7 @@
 }
 .bb-tools .tool:hover { background: var(--paper-2); color: var(--ink); }
 .bb .bb-tools .tool[aria-pressed="true"] { background: var(--ink); color: #fff; }
-.bb-tools .tool svg { width: 20px; height: 20px; }
+.bb-tools .tool svg { width: 18px; height: 18px; }
 .bb-tools .swatch { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--hair-strong); }
 .bb-tools .sep { height: 1px; background: var(--hair); margin: 4px 6px; }
 .bb-tools.closed .t { display: none; }
@@ -166,31 +166,33 @@
 }
 .bb-dock > * { pointer-events: auto; }
 .bb-sub {
-  font-family: Caveat, "Segoe Print", cursive; font-size: 24px; line-height: 1.2; color: var(--ink);
+  font-family: Inter, system-ui, sans-serif; font-size: 16px; font-weight: 500; line-height: 1.45; color: var(--ink);
   background: var(--card); border: 1px solid var(--hair); border-radius: 16px; box-shadow: var(--shadow);
   padding: 8px 16px 10px; text-align: center; max-width: 100%;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
 .bb-sub:empty { display: none; }
-.bb-sub .who { font-family: Inter, system-ui, sans-serif; font-size: 12px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 2px; }
+.bb-sub .who { font-size: 11px; font-weight: 600; letter-spacing: .02em; color: var(--tutor); display: block; margin-bottom: 2px; }
+.bb-sub.you .who { color: var(--muted); }
 .bb-sub.you { color: var(--soft); }
 .bb-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
 .bb-chip {
-  min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--hair-strong); background: var(--card);
-  font-size: 14px; font-weight: 600; color: var(--ink-2); display: inline-flex; align-items: center; gap: 8px; box-shadow: var(--shadow);
+  min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--hair-strong); background: var(--card);
+  font-size: 14px; font-weight: 500; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; box-shadow: var(--shadow);
 }
 .bb-chip:hover { border-color: var(--ink); }
 .bb .bb-chip.dark { background: var(--ink); color: #fff; border-color: var(--ink); }
-.bb-chip svg { width: 18px; height: 18px; }
-.bb-chip.icon-only { padding: 0; width: 44px; justify-content: center; }
+.bb-chip svg { width: 16px; height: 16px; color: var(--soft); }
+.bb .bb-chip.dark svg { color: #fff; }
+.bb-chip.icon-only { padding: 0; width: 40px; justify-content: center; }
 .bb .bb-mic {
-  width: 56px; height: 56px; border-radius: 50%; border: 0; background: var(--ink); color: #fff;
+  width: 48px; height: 48px; border-radius: 50%; border: 0; background: var(--ink); color: #fff;
   display: inline-flex; align-items: center; justify-content: center; box-shadow: var(--shadow-lift); flex: none;
 }
-.bb .bb-mic svg { width: 24px; height: 24px; }
+.bb .bb-mic svg { width: 20px; height: 20px; }
 .bb .bb-mic[aria-pressed="true"] { background: var(--pen-red); box-shadow: 0 0 0 6px rgba(200, 49, 58, .18); }
-.bb .bb-mic.small { width: 44px; height: 44px; }
-.bb .bb-mic.small svg { width: 20px; height: 20px; }
+.bb .bb-mic.small { width: 40px; height: 40px; }
+.bb .bb-mic.small svg { width: 17px; height: 17px; }
 .bb-badge { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; border-radius: 9px; background: var(--tutor); color: #fff; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; padding: 0 4px; }
 .bb-chip.has-badge { position: relative; }
 
@@ -201,8 +203,8 @@
 .bb-focus[hidden] { display: none; }
 .bb-focus .say { display: flex; gap: 10px; align-items: flex-start; }
 .bb-focus .face { width: 34px; height: 34px; border-radius: 50%; background: var(--tutor-soft); color: var(--tutor); display: inline-flex; align-items: center; justify-content: center; flex: none; }
-.bb-focus .face svg { width: 20px; height: 20px; }
-.bb-focus .line { font-family: Caveat, "Segoe Print", cursive; font-size: 24px; line-height: 1.2; color: var(--ink); }
+.bb-focus .face svg { width: 17px; height: 17px; }
+.bb-focus .line { font-size: 17px; font-weight: 500; line-height: 1.45; color: var(--ink); display: block; }
 .bb-focus .kick { font-size: 12px; font-weight: 600; color: var(--tutor); display: block; font-family: Inter, system-ui, sans-serif; }
 .bb-focus .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .bb-focus .grow { flex: 1; }
@@ -236,7 +238,7 @@
   .bb-question { top: 8px; max-width: calc(100% - 84px); left: auto; right: 10px; transform: none; }
   .bb-tools { top: 70px; transform: none; }
   .bb-tool-pop { left: 70px; top: 70px !important; }
-  .bb-sub { font-size: 21px; }
+  .bb-sub { font-size: 15px; }
   .bb-actions { gap: 6px; }
   .bb-chip { padding: 0 12px; font-size: 13px; }
   .bb-chip .lbl-long { display: none; }

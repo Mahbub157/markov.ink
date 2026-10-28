@@ -10,6 +10,8 @@ const ALLOWED_MODELS = new Set([
 const DEFAULT_MODEL = process.env.TUTOR_MODEL || 'claude-opus-5';
 const MAX_TOKENS_CAP = 1200;
 const MAX_BODY_BYTES = 6 * 1024 * 1024; // whiteboard screenshots are ~1-3 MB as base64
+const { originAllowed, clientId, makeLimiter } = require('./_guard.js');
+const limited = makeLimiter(40, 10 * 60 * 1000); // 40 tutor turns per 10 minutes per visitor
 
 module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -28,11 +30,12 @@ module.exports = async function handler(req, res) {
     return res.status(503).json({ error: { message: 'Server has no ANTHROPIC_API_KEY set. Add it in Vercel project settings.' } });
   }
 
-  // Same-origin guard: only the deployed site may use this endpoint.
-  const origin = req.headers.origin || '';
-  const host = req.headers.host || '';
-  if (origin && !origin.endsWith(host) && !/localhost|127\.0\.0\.1/.test(origin)) {
+  // Only Markov pages may use this endpoint (see _guard.js for the allowed sites).
+  if (!originAllowed(req.headers.origin)) {
     return res.status(403).json({ error: { message: 'Forbidden origin' } });
+  }
+  if (limited(clientId(req))) {
+    return res.status(429).json({ error: { message: 'Too many requests. Wait a few minutes and try again.' } });
   }
 
   let body = req.body;

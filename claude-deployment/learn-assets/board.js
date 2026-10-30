@@ -718,11 +718,24 @@
   function wait(ms) { return new Promise(function (r) { setTimeout(r, reduced ? Math.min(ms, 120) : ms); }); }
 
   // Draws the tutor's marks one by one, moving the cursor to each.
+  // True when the board already has this mark: a tick or ring on the same spot, the same
+  // note, or the same kind of diagram. The tutor often repeats itself across replies.
+  function alreadyDrawn(m) {
+    var r = markRect(m), cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+    return marks.some(function (o) {
+      if (o.type !== m.type) return false;
+      if (m.type === 'note') return String(o.text).trim().toLowerCase() === String(m.text).trim().toLowerCase();
+      if (m.type === 'diagram') return o.kind === m.kind && o.left === m.left && o.right === m.right && o.total === m.total && o.groups === m.groups && o.fn === m.fn && o.num === m.num && o.den === m.den;
+      var q = markRect(o);
+      return Math.abs(q.x + q.w / 2 - cx) < 30 && Math.abs(q.y + q.h / 2 - cy) < 24;
+    });
+  }
   function playActions(list, anchor) {
     var chain = Promise.resolve();
     list.forEach(function (a) {
       chain = chain.then(function () {
         var m = resolve(a, anchor), c = markCenter(m);
+        if (alreadyDrawn(m)) { cursorTo(c.x, c.y); return wait(350); }   // point at it again instead of redrawing
         cursorTo(c.x, c.y);
         return wait(650).then(function () { m.t = Date.now(); marks.push(m); drawMark(m, true); saveSoon(); return wait(500); });
       });

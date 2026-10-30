@@ -4,6 +4,8 @@
 // Needs: a local server for claude-deployment/ with clean URLs (the preview server on port
 // 4317 works), and Chrome running headless with --remote-debugging-port=9339.
 // Run:   node tests/pdf-journey.mjs <path to PDF> [base URL]
+// The base URL can be the live site (https://www.markov.ink/claude-deployment); with live AI on,
+// "I need help" makes a real tutor request (a few cents).
 import path from 'node:path';
 
 const pdf = path.resolve(process.argv[2] || '../output/pdf/Markov_Algebra_Homework.pdf');
@@ -24,6 +26,9 @@ const draw = async (pts) => { await send('Input.dispatchMouseEvent', { type: 'mo
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pts.at(-1)[0], y: pts.at(-1)[1], button: 'left', clickCount: 1 }); };
 const stroke = (x, y) => Array.from({ length: 14 }, (_, i) => [x + i * 8, y + Math.sin(i / 2) * 6]);
 
+// Waits for the tutor to finish (demo replies are instant; live AI takes several seconds),
+// then lets its drawings land.
+const waitTutor = async () => { await sleep(600); for (let i = 0; i < 90; i++) { if (!/thinking/i.test(await ev("document.getElementById('status').innerText"))) break; await sleep(500); } await sleep(2500); };
 let failures = 0;
 function check(name, ok, detail) { console.log((ok ? 'PASS ' : 'FAIL ') + name + (detail !== undefined ? '  ' + detail : '')); if (!ok) failures++; }
 const state = () => ev("JSON.stringify({ q: MarkovBoard._test.state().qi, objs: MarkovBoard._test.state().objs.length, marks: MarkovBoard._test.state().marks.length, key: MarkovBoard._test.key() })").then(JSON.parse);
@@ -67,7 +72,7 @@ check('homework brief shows pictures for 5 and 6', (await ev("document.querySele
 await ev("document.querySelector('[data-start]').click()"); await sleep(2200);
 check('board opens on question 1 of 6', /Question 1 of 6/.test(await ev("document.getElementById('q-count').innerText")));
 await draw(stroke(300, 330));                                       // q1: one stroke
-await ev("document.querySelector('[data-act=help]').click()"); await sleep(2500);   // q1: a tutor annotation (demo replies)
+await ev("document.querySelector('[data-act=help]').click()"); await waitTutor();   // q1: a tutor annotation
 await ev("document.querySelector('[data-act=leave-focus]')?.click()"); await sleep(300);
 const q1 = await state();
 await ev("MarkovBoard._test.goTo(4)"); await sleep(400);
@@ -87,7 +92,8 @@ await dot(2); await draw(stroke(500, 700)); await ev("document.getElementById('q
 await ev("MarkovBoard._test.goTo(0)");
 const counts = {};
 for (const qn of [0, 1, 2, 3, 4, 5]) { await ev(`MarkovBoard._test.goTo(${qn})`); await sleep(120); counts[qn + 1] = await state(); }
-check('question 1 kept 1 stroke and its tutor mark', counts[1].objs === 1 && counts[1].marks === q1.marks && q1.marks > 0, JSON.stringify(counts[1]));
+// demo replies always draw on this question; the live tutor may answer in words only
+check('question 1 kept 1 stroke and its tutor marks', counts[1].objs === 1 && counts[1].marks === q1.marks, JSON.stringify(counts[1]) + ', tutor drew ' + q1.marks);
 check('question 5 kept exactly its 2 strokes, no tutor marks', counts[5].objs === 2 && counts[5].marks === 0, JSON.stringify(counts[5]));
 check('question 6 kept exactly its 3 strokes, no tutor marks', counts[6].objs === 3 && counts[6].marks === 0, JSON.stringify(counts[6]));
 check('stroke drawn just before a quick switch was saved on question 3', counts[3].objs === 1, JSON.stringify(counts[3]));
@@ -96,7 +102,7 @@ check('every question has its own board key', new Set(Object.values(counts).map(
 
 // a tutor reply that arrives after switching never lands on the new question
 await ev("MarkovBoard._test.goTo(0)"); await sleep(200);
-await ev("document.querySelector('[data-act=help]').click(); MarkovBoard._test.goTo(1); 1"); await sleep(2500);
+await ev("document.querySelector('[data-act=help]').click(); MarkovBoard._test.goTo(1); 1"); await waitTutor(); await sleep(4000);
 const q2 = await state();
 check('help asked on question 1 does not draw on question 2', q2.marks === 0 && q2.objs === 0, JSON.stringify(q2));
 

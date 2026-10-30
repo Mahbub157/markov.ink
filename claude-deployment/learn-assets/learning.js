@@ -317,10 +317,43 @@
       questions: (hw.questions || []).slice(0, 40).map(function (q, i) {
         return { id: q.id || ('q' + (i + 1)), text: str(q.text, 600), topicId: q.topicId || null, suggested: q.suggested || null };
       }),
+      // questions that should have a picture from the file (the pictures live in saveVisuals)
+      visualIds: (hw.visualIds || []).filter(function (v) { return typeof v === 'string'; }).slice(0, 40),
       createdAt: (c.homework[id] && c.homework[id].createdAt) || now(), updatedAt: now()
     };
     save();
     return c.homework[id];
+  }
+
+  /* ---------- Pictures kept from a homework file ---------- */
+  // Kept apart from the learning record so the record stays small, keyed by homework and
+  // question id. Browser storage can be full; the caller learns which pictures did not save.
+  var VKEY = DEMO ? 'markov.visuals.demo.v1' : 'markov.visuals.v1';
+  function readVisuals() { try { return JSON.parse(window.localStorage.getItem(VKEY) || '{}') || {}; } catch (e) { return {}; } }
+  function saveVisuals(courseId, hwId, map) {
+    var all = readVisuals(), k = courseId + '|' + hwId;
+    var ids = Object.keys(map || {}).filter(function (id) { return typeof map[id] === 'string' && /^data:image\/(jpeg|png);base64,/.test(map[id]); });
+    if (!ids.length) {
+      if (all[k]) { delete all[k]; try { window.localStorage.setItem(VKEY, JSON.stringify(all)); } catch (e) {} }
+      return { saved: 0, failed: [] };
+    }
+    var entry = { t: Date.now(), items: {} };
+    ids.forEach(function (id) { entry.items[id] = map[id]; });
+    all[k] = entry;
+    // if space runs out, older homework pictures make room for these
+    for (var tries = 0; tries < 30; tries++) {
+      try { window.localStorage.setItem(VKEY, JSON.stringify(all)); return { saved: ids.length, failed: [] }; }
+      catch (e) {
+        var older = Object.keys(all).filter(function (x) { return x !== k; }).sort(function (a, b) { return all[a].t - all[b].t; });
+        if (!older.length) break;
+        delete all[older[0]];
+      }
+    }
+    return { saved: 0, failed: ids };
+  }
+  function visual(courseId, hwId, qid) {
+    var e = readVisuals()[courseId + '|' + hwId];
+    return (e && e.items && e.items[qid]) || null;
   }
 
   /* ---------- Test plans ---------- */
@@ -395,7 +428,7 @@
     recordCompletion: recordCompletion, totalPoints: totalPoints, pointsToday: function () { return pointsOn(dayKey()); },
     streak: streak, practiceDays: practiceDays, dayKey: dayKey,
     topicEvidence: topicEvidence, participation: participation,
-    splitQuestions: splitQuestions, saveHomework: saveHomework,
+    splitQuestions: splitQuestions, saveHomework: saveHomework, saveVisuals: saveVisuals, visual: visual,
     savePlan: savePlan, deletePlan: deletePlan, buildPlan: buildPlan,
     events: function () { return data.events.slice(); },
     demoSeed: demoSeed, resetDemo: resetDemo

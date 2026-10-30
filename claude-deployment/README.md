@@ -57,6 +57,21 @@ Rules worth knowing:
   uploaded and the file is not saved; only the questions the student keeps are stored.
   Printed sheets read well; handwriting does not, and symbols can be misread, so students check
   each card.
+- PDFs with real text are always read from that text (exact, free, never sent anywhere), even
+  when "Read with Claude" is on. The reader uses each line's position on the page: lines repeated
+  at the top or bottom of several pages are headers and are dropped; a number only starts a new
+  question when the text before it is complete, so `3(x + 4) - 2x` stays one expression; parts
+  like (a) and (b) stay with their question, one per line; short text away from a question's left
+  edge (axis ticks, point names, dimensions) is treated as a label inside a picture. When a
+  question's region has drawing in it, a picture of the region (question text, diagram, and
+  labels) is kept. Pictures are saved per question in `markov.visuals.v1`, apart from the
+  learning record; if one cannot be saved, the homework page says so. Anything uncertain, like a
+  gap in the numbering, is listed under "Check before you start" on the review step.
+- Each homework question has its own whiteboard, saved under the question's id (not its text), so
+  identical questions never share work. Switching questions saves the current one first, a tutor
+  reply only draws on the question it was asked about, and each question keeps its own conversation.
+- Checks: `node tests/reader.test.js` (question splitting) and `node tests/pdf-journey.mjs <pdf>`
+  (the full journey in a browser; needs the local server and Chrome with remote debugging).
 - Optional Claude vision: `api/read-questions.js` sends the page images to Claude
   (`claude-opus-5-5`, structured JSON output) and gets back only the questions, with sub-parts,
   shared directions, and a list of what was left out (names, student working, answers, scores,

@@ -294,7 +294,9 @@
       } else s.items = make(tid, r, 3, used);
       if (!s.items.length) s.items.push(fallback(tid));
     } else if (a.type === 'homework' && ctx.homework) {
-      s.items = ctx.homework.questions.map(function (q) { return { text: q.text, topicId: q.topicId || null }; });
+      s.items = ctx.homework.questions.map(function (q) {
+        return { id: q.id, text: q.text, topicId: q.topicId || null, visualExpected: (ctx.homework.visualIds || []).indexOf(q.id) >= 0 };
+      });
     } else if (a.type === 'assignment' && ctx.assignment) {
       s.items = ctx.assignment.questions.map(function (q) { return { text: q }; });
     } else if (a.type === 'test-step' && ctx.plan) {

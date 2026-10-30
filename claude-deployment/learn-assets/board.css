@@ -468,3 +468,12 @@
   .bw-in, .bb-win, .bb-question.bb-win, .fin-badge { animation: none; }
   .bw-scale .beam, .bw-term { transition: none; }
 }
+
+/* ---------- pictures kept from a homework file ---------- */
+.bb .qvis { display: block; margin: 6px 4px 2px; padding: 0; border: 1px solid var(--hair); border-radius: 10px; background: #fff; cursor: zoom-in; max-width: 100%; overflow: hidden; }
+.bb .qvis img { display: block; max-width: 100%; max-height: min(30vh, 240px); width: auto; height: auto; margin: 0 auto; }
+.bb .qvis.big { cursor: zoom-out; }
+.bb .qvis.big img { max-height: 62vh; }
+.bb .qvis:focus-visible { outline: 3px solid var(--blue-bright); outline-offset: 2px; }
+.qvis-miss { margin: 6px 4px 0; font-size: 13px; color: var(--demo); background: var(--demo-bg); border-radius: 8px; padding: 6px 10px; }
+@media (max-width: 640px) { .bb .qvis img { max-height: 24vh; } }

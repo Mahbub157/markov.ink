@@ -125,7 +125,14 @@
 
   /* ---------- saved boards ---------- */
   var STORE = 'markov.board.v1';
-  function boardKey() { return (courseId || 'free') + '|' + (act ? act.id + (act.type === 'homework' ? '' : '|' + attempt.id) : '') + '|' + currentQ().slice(0, 120); }
+  // Each question has its own saved board. Homework questions use their stable id, so two
+  // questions with the same text never share work, and editing a question's text keeps its work.
+  function boardKey() {
+    var it = currentItem(), q = act && act.type === 'homework' && it.id ? 'id:' + it.id : currentQ().slice(0, 120);
+    return (courseId || 'free') + '|' + (act ? act.id + (act.type === 'homework' ? '' : '|' + attempt.id) : '') + '|' + q;
+  }
+  // how homework boards were named before question ids were used
+  function legacyKey() { return (courseId || 'free') + '|' + (act ? act.id : '') + '|' + currentQ().slice(0, 120); }
   function readStore() { try { return JSON.parse(localStorage.getItem(STORE) || '{}') || {}; } catch (e) { return {}; } }
   var saveTimer = null;
   // Save right away when the page closes, so a quick reload never loses the last change.
@@ -140,6 +147,7 @@
     if (demo.on) return;
     (function () {
       var all = readStore();
+      if (!objs.length && !marks.length && !widgets.length && !all[boardKey()]) return;
       all[boardKey()] = { objs: objs, marks: marks, widgets: widgets, t: Date.now() };
       var keys = Object.keys(all).sort(function (a, b) { return all[b].t - all[a].t; });
       keys.slice(30).forEach(function (k) { delete all[k]; });
@@ -149,7 +157,12 @@
     })();
   }
   function loadBoard() {
-    var b = readStore()[boardKey()];
+    var all = readStore(), b = all[boardKey()];
+    if (!b && act && act.type === 'homework' && currentItem().id) {
+      // a board saved before question ids: use it only if no other question has the same text
+      var same = items.filter(function (x) { return x.text === currentQ(); }).length;
+      if (same === 1 && all[legacyKey()]) b = all[legacyKey()];
+    }
     objs = b && Array.isArray(b.objs) ? b.objs : [];
     marks = b && Array.isArray(b.marks) ? b.marks : [];
     widgets = b && Array.isArray(b.widgets) ? b.widgets : [];
@@ -731,20 +744,21 @@
     });
   }
   function playActions(list, anchor) {
-    var chain = Promise.resolve();
+    var chain = Promise.resolve(), key = boardKey();
     list.forEach(function (a) {
       chain = chain.then(function () {
+        if (boardKey() !== key) return;   // never draw on a different question
         var m = resolve(a, anchor), c = markCenter(m);
         if (alreadyDrawn(m)) { cursorTo(c.x, c.y); return wait(350); }   // point at it again instead of redrawing
         cursorTo(c.x, c.y);
-        return wait(650).then(function () { m.t = Date.now(); marks.push(m); drawMark(m, true); saveSoon(); return wait(500); });
+        return wait(650).then(function () { if (boardKey() !== key) return; m.t = Date.now(); marks.push(m); drawMark(m, true); saveSoon(); return wait(500); });
       });
     });
     return chain;
   }
 
   /* ---------- status, subtitles, conversation ---------- */
-  var history = [], unread = 0;
+  var history = [], unread = 0, histories = {};   // histories: conversation per question
   function setStatus(state, text) {
     var s = $('status'); s.setAttribute('data-state', state);
     s.querySelector('span').textContent = text;
@@ -887,9 +901,15 @@
     var req = { kind: kind, text: text || '', question: currentQ(), topic: tid ? topicTitle(tid) : '', hints: tid && PB ? PB.hintsFor(tid) : null, noHints: noHints,
       history: history.slice(-8), image: T.isLive() ? boardImage() : null, boardW: W, boardH: H, box: opts && opts.rect ? opts.rect : null };
     if (kind !== 'watch') watchedVersion = inkVersion;
+    var askKey = boardKey();
     return T.ask(req).then(function (reply) {
       busy = false;
       if (!reply) { idleStatus(); return; }
+      if (boardKey() !== askKey) {
+        // the student moved to another question: keep the reply with the question it was about
+        if (reply.say) (histories[askKey] = histories[askKey] || []).push({ role: 'tutor', text: reply.say });
+        idleStatus(); return;
+      }
       if (kind === 'watch' && !reply.say && !(reply.actions || []).length) { idleStatus(); return; }
       if (reply.practice) { addPractice(reply.practice); }
       var anchor = reply.focus || (opts && opts.rect) || (focus.on ? focus.rect : null);
@@ -985,6 +1005,9 @@
     var isExtra = qi >= questions.length - extra && extra > 0;
     var label = it.example ? 'Worked example' : isExtra ? 'Practice' : act ? 'Q' + (qi + 1 - (items[0] && items[0].example ? 1 : 0)) : questions.length ? 'Question' : 'Start';
     var body = '<div class="qtext">' + esc(q ? mathText(q) : 'Write any problem on the board, or tap Practice for one.') + '</div>';
+    var pic = act && act.type === 'homework' && it.id && L && L.visual ? L.visual(courseId, act.homeworkId, it.id) : null;
+    if (pic) body += '<button type="button" class="qvis" aria-expanded="false" aria-label="Picture for this question. Select to make it bigger."><img src="' + pic + '" alt="Picture for this question, from your file"></button>';
+    else if (it.visualExpected) body += '<p class="qvis-miss">The picture for this question could not be saved in this browser. Use your sheet for it.</p>';
     if (it.example) {
       body += '<ol class="qsteps">' + it.steps.map(function (st) { return '<li>' + esc(st) + '</li>'; }).join('') + '</ol>' +
         '<button type="button" class="bb-chip dark small" id="q-yourturn">Your turn' + ic('right') + '</button>';
@@ -1075,6 +1098,8 @@
   });
   $('question').addEventListener('click', function (e) {
     if (e.target.closest('#q-yourturn')) { goTo(qi + 1); return; }
+    var vb = e.target.closest('.qvis');
+    if (vb) { var big = vb.classList.toggle('big'); vb.setAttribute('aria-expanded', String(big)); vb.setAttribute('aria-label', big ? 'Picture for this question. Select to make it smaller.' : 'Picture for this question. Select to make it bigger.'); return; }
     var sb = e.target.closest('[data-spot]');
     if (sb && attempt) {
       var it = currentItem(), pick = +sb.getAttribute('data-spot'), res = PB.check(it, pick);
@@ -1087,11 +1112,17 @@
     if (e.target.closest('#q-toggle')) { settings.qMini = !settings.qMini; saveSettings(); renderQuestion(); $('q-toggle').focus(); }
   });
   function goTo(i) {
-    if (i < 0 || i >= questions.length) return;
-    exitFocus(false);
-    qi = i; renderQuestion(); loadBoard(); markActivity();
+    if (i < 0 || i >= questions.length || i === qi) return;
+    // finish and save this question's work before the next one is shown
+    if (cur || lassoPts || moving || erasing) endStroke();
+    commitText();
+    clearTimeout(saveTimer); saveNow();
+    histories[boardKey()] = history;
+    exitFocus(false); closePops(); $('ask-chip').hidden = true; T.voice.stopSpeaking();
+    qi = i;
+    history = histories[boardKey()] || [];
+    renderQuestion(); loadBoard(); markActivity(); renderChat();
     subtitle('', 'tutor'); cursorPark();
-    if (act) history.push({ role: 'you', text: '(Moved to question ' + (qi + 1) + ')' });
   }
   $('q-prev').innerHTML = ic('left'); $('q-next').innerHTML = ic('right');
   $('q-prev').addEventListener('click', function () { goTo(qi - 1); });
@@ -1598,5 +1629,5 @@
   });
   if (document.fonts && document.fonts.load) document.fonts.load('600 26px Caveat').then(function () { redraw(); renderMarks(); });
 
-  window.MarkovBoard = { _test: { item: function () { return currentItem(); }, lines: function () { return workLines(); }, compile: compile, state: function () { return { objs: objs, marks: marks, focus: focus.on, qi: qi, questions: questions, tool: tool, demo: demo.on }; }, askTutor: askTutor, startDemo: startDemo, placeFree: placeFree } };
+  window.MarkovBoard = { _test: { item: function () { return currentItem(); }, key: function () { return boardKey(); }, goTo: function (i) { goTo(i); }, lines: function () { return workLines(); }, compile: compile, state: function () { return { objs: objs, marks: marks, focus: focus.on, qi: qi, questions: questions, tool: tool, demo: demo.on }; }, askTutor: askTutor, startDemo: startDemo, placeFree: placeFree } };
 })();

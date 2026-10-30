@@ -112,14 +112,25 @@ Run these pages locally with any static server that supports clean URLs, for exa
 
 ## Live AI
 
-Set one environment variable in Vercel (Project → Settings → Environment Variables):
+Set one environment variable in Vercel (Project, Settings, Environment Variables), for
+Production and Preview, then redeploy:
 
     ANTHROPIC_API_KEY = sk-ant-...
 
-Optional: `TUTOR_MODEL` (default `claude-opus-5`; also `claude-sonnet-5`, `claude-fable-5-1`).
+Optional: `TUTOR_MODEL` (default `claude-opus-5-5`, used for help, checks, and questions) and
+`TUTOR_WATCH_MODEL` (default `claude-sonnet-5-5`, used for quiet looks while the student writes).
+Set a monthly spend limit in the Anthropic console.
 
-The page checks `/api/tutor` on load. If the key is set, every user gets live AI with nothing to paste.
-If it is not set (or the file is opened locally), the gear menu still accepts a personal key.
+Two server functions use the key, and neither accepts free-form prompts:
+- `api/tutor.js`: the whiteboard tutor. The browser sends only structured fields (kind of help,
+  question, topic, the student's words, a picture of the board, a marked box). The tutor's
+  instructions, the model, and the token cap are fixed on the server, the reply is structured
+  JSON, checks get no hints, and each visitor is limited to 60 requests per 10 minutes.
+  `GET /api/tutor` returns `{ live }`; the older whiteboard looks for a different field, so it
+  keeps its own paste-a-key mode and never calls this endpoint.
+- `api/read-questions.js`: finds the questions on a worksheet photo or PDF (see above).
+
+Root `api/` files load these, because Vercel builds from the repository root.
 
 ## Run locally with the function
 

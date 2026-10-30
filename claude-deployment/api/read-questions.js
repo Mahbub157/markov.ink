@@ -11,6 +11,7 @@ const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const RATE = { windowMs: 10 * 60 * 1000, max: 12 };   // per client, best effort per instance
 
 const { originAllowed, clientId, makeLimiter } = require('./_guard.js');
+const { apiKey, keyCheck } = require('./_key.js');
 const rateLimited = makeLimiter(RATE.max, RATE.windowMs);
 
 // The JSON the model must return. Every field is required so the page never guesses.
@@ -103,8 +104,8 @@ function tidy(out) {
 }
 
 async function handler(req, res) {
-  const configured = Boolean(process.env.ANTHROPIC_API_KEY);
-  if (req.method === 'GET') return send(res, 200, { ok: true, configured });
+  const configured = Boolean(apiKey());
+  if (req.method === 'GET') return send(res, 200, { ok: true, configured, key: keyCheck() });
   if (req.method !== 'POST') { res.setHeader('Allow', 'GET, POST'); return send(res, 405, { error: 'method' }); }
   if (!configured) return send(res, 503, { error: 'not_configured' });
 
@@ -139,7 +140,7 @@ async function handler(req, res) {
   content.push({ type: 'text', text: 'Find the questions on ' + (images.length > 1 ? 'these pages' : 'this page') + ' and return them in the required JSON format.' });
 
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
-  const anthropic = new Anthropic();
+  const anthropic = new Anthropic({ apiKey: apiKey() });
 
   let response;
   try {
@@ -155,7 +156,7 @@ async function handler(req, res) {
   } catch (err) {
     if (err instanceof Anthropic.RateLimitError) return send(res, 429, { error: 'busy' });
     if (err instanceof Anthropic.BadRequestError) return send(res, 400, { error: 'rejected' });
-    if (err instanceof Anthropic.AuthenticationError) return send(res, 503, { error: 'not_configured' });
+    if (err instanceof Anthropic.AuthenticationError) return send(res, 503, { error: 'key_rejected' });
     if (err instanceof Anthropic.APIError) return send(res, 502, { error: 'upstream', status: err.status });
     return send(res, 502, { error: 'unreachable' });
   }

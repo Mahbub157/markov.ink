@@ -39,6 +39,7 @@
     speaker: '<path d="M4 9h4l5-4v14l-5-4H4Z"/><path d="M17 9a4 4 0 0 1 0 6"/>', trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
     download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>', keys: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10"/>',
     pause: '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
+    grip: '<circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/>',
     lasso: '<path d="M12 4c4.6 0 8 2.4 8 5.4S16.6 15 12 15 4 12.4 4 9.4 7.4 4 12 4Z" stroke-dasharray="3 2.5"/><path d="M7.5 13.5c-1 2.2.2 4.2 2.4 4.2 1.6 0 2.1 1.4 1.4 2.8"/>',
     flag: '<path d="M5 21V4M5 4h11l-2.5 4L16 12H5"/>',
     replay: '<path d="M4 12a8 8 0 1 0 2.6-5.9"/><path d="M4 4v4.5h4.5"/>',
@@ -314,6 +315,9 @@
     if (e.button && e.button !== 0) return;
     closePops();
     var p = pos(e);
+    var hh = handleAt(p[0], p[1]);
+    tapHandle = hh ? { h: hh, t: Date.now() } : null;
+    if (hh && tool === 'text') { tapHandle = null; openStepMenu(hh.l, hh.i); e.preventDefault(); return; }
     if (tool === 'text') { openTextbox(p[0], p[1]); e.preventDefault(); return; }
     canvas.setPointerCapture(e.pointerId);
     $('steps-layer').hidden = true; $('ask-chip').hidden = true;
@@ -383,6 +387,11 @@
       erasing = null; stepsSoon(); return;
     }
     if (!cur) { stepsSoon(); return; }
+    if (tapHandle) {
+      var th = tapHandle; tapHandle = null;
+      var size = cur.type === 'stroke' ? pathLen(cur.pts) : Math.hypot(cur.x2 - cur.x1, cur.y2 - cur.y1);
+      if (size < 6 && Date.now() - th.t < 600) { cur = null; redraw(); $('steps-layer').hidden = false; openStepMenu(th.h.l, th.h.i); return; }
+    }
     var scrib = cur.type === 'stroke' ? scribbleHits(cur) : null;
     if (scrib) {
       var prevS = snapshot();
@@ -737,7 +746,13 @@
     var r = markRect(m), cx = r.x + r.w / 2, cy = r.y + r.h / 2;
     return marks.some(function (o) {
       if (o.type !== m.type) return false;
-      if (m.type === 'note') return String(o.text).trim().toLowerCase() === String(m.text).trim().toLowerCase();
+      if (m.type === 'note') {
+        // "undo +5 with..?" and "undo +5 with...?" are the same note
+        var a1 = String(o.text).toLowerCase().replace(/[^a-z0-9]/g, ''), b1 = String(m.text).toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (a1 === b1 || (a1.length >= 6 && b1.length >= 6 && (a1.indexOf(b1) === 0 || b1.indexOf(a1) === 0))) return true;
+        var q0 = markRect(o);
+        return Math.abs(q0.x - r.x) < 40 && Math.abs(q0.y - r.y) < 24;
+      }
       if (m.type === 'diagram') return o.kind === m.kind && o.left === m.left && o.right === m.right && o.total === m.total && o.groups === m.groups && o.fn === m.fn && o.num === m.num && o.den === m.den;
       var q = markRect(o);
       return Math.abs(q.x + q.w / 2 - cx) < 30 && Math.abs(q.y + q.h / 2 - cy) < 24;
@@ -770,12 +785,17 @@
     if (!T.isLive()) return setStatus('demo', 'Demo replies');
     setStatus('watching', settings.watch ? 'Tutor is watching' : 'Tutor is ready');
   }
+  var lastSub = { text: '', who: 'tutor' };
   function subtitle(text, who) {
     var s = $('sub');
-    s.className = 'bb-sub' + (who === 'you' ? ' you' : '');
-    s.innerHTML = text ? '<span class="clip"><span class="who">' + (who === 'you' ? 'You' : 'Tutor') + '</span>' + esc(text) + '</span>' : '';
+    lastSub = { text: text || '', who: who || 'tutor' };
+    s.className = 'bb-sub' + (who === 'you' ? ' you' : '') + (focus.on ? ' focus' : '');
+    if (focus.on) {
+      s.innerHTML = '<span class="clip"><span class="who">One step at a time</span><span id="focus-line">' + esc(who === 'you' ? '' : text || '') + '</span></span>';
+    } else {
+      s.innerHTML = text ? '<span class="clip"><span class="who">' + (who === 'you' ? 'You' : 'Tutor') + '</span>' + esc(text) + '</span>' : '';
+    }
     s.title = text || '';
-    if (focus.on) $('focus-line').textContent = who === 'you' ? '' : text;
   }
   function logMsg(role, text) {
     if (!text) return;
@@ -808,6 +828,14 @@
       a.innerHTML = demo.done
         ? '<div class="bb-grp left"><button type="button" class="bb-chip" data-act="replay">' + ic('play') + 'Watch again</button></div><div class="bb-grp right"><button type="button" class="bb-chip dark" data-act="end-demo">Back to my board</button></div>'
         : '<div class="bb-grp left"></div><div class="bb-grp right"><button type="button" class="bb-chip" data-act="end-demo">' + ic('close') + 'Stop the demo</button></div>';
+      return;
+    }
+    if (focus.on) {
+      a.innerHTML = '<div class="bb-grp left"><button type="button" class="bb-chip" data-act="showme">' + ic('eye') + 'Show me</button>' +
+        '<button type="button" class="bb-chip" data-act="stuck">Still stuck</button></div>' +
+        '<div class="bb-grp right"><button type="button" class="bb-mic" data-act="mic" aria-pressed="' + listening + '" aria-label="Answer out loud" title="Answer out loud (M)">' + ic('mic') + '</button>' +
+        '<button type="button" class="bb-chip icon-only" data-act="leave-focus" aria-label="Back to the full board (Esc)" title="Back to the full board (Esc)">' + ic('close') + '</button>' +
+        '<button type="button" class="bb-chip dark" data-act="fixed">' + ic('check') + 'I fixed it</button></div>';
       return;
     }
     if (noHints) {
@@ -851,26 +879,21 @@
     spot.hidden = false;
     spot.style.left = (r.x - pad) + 'px'; spot.style.top = (r.y - pad) + 'px';
     spot.style.width = (r.w + pad * 2) + 'px'; spot.style.height = (r.h + pad * 2) + 'px';
-    $('actions').hidden = true; $('sub').hidden = true;
-    var card = $('focus-card');
-    card.hidden = false;
-    card.innerHTML = '<div class="say"><span class="face">' + ic('face') + '</span><div><span class="kick">One step at a time</span><span class="line" id="focus-line">' + esc(line || '') + '</span></div></div>' +
-      '<div class="row"><button type="button" class="bb-chip" data-act="showme">' + ic('eye') + 'Show me</button>' +
-      '<button type="button" class="bb-chip" data-act="stuck">Still stuck</button>' +
-      '<button type="button" class="bb-mic small" data-act="mic" aria-pressed="' + listening + '" aria-label="Answer out loud">' + ic('mic') + '</button>' +
-      '<span class="grow"></span>' +
-      '<button type="button" class="bb-chip icon-only" data-act="leave-focus" aria-label="Back to the full board (Esc)" title="Back to the full board (Esc)">' + ic('close') + '</button>' +
-      '<button type="button" class="bb-chip dark" data-act="fixed">' + ic('check') + 'I fixed it</button></div>';
+    // same bottom row as always: what to do on the left, the tutor's words in the middle,
+    // talking and "I fixed it" on the right
+    $('dock').classList.add('focusing');
+    renderActions();
+    subtitle(line || lastSub.text, 'tutor');
     renderTools(); idleStatus();
     cursorTo(r.x + r.w + 18, r.y + r.h / 2);
-    var f = card.querySelector('[data-act="fixed"]'); if (f && !demo.on) f.focus({ preventScroll: true });
+    var f = $('actions').querySelector('[data-act="fixed"]'); if (f && !demo.on) f.focus({ preventScroll: true });
   }
   function exitFocus(byUser) {
     if (!focus.on) return;
     focus.on = false;
-    $('spot').hidden = true; $('focus-card').hidden = true;
-    $('actions').hidden = false; $('sub').hidden = false;
+    $('spot').hidden = true; $('dock').classList.remove('focusing');
     renderTools(); renderActions(); idleStatus();
+    subtitle(lastSub.text, lastSub.who);
     if (byUser) { var h = $('actions').querySelector('[data-act="help"]'); if (h) h.focus({ preventScroll: true }); }
   }
 
@@ -1037,8 +1060,11 @@
         '<p class="qfb" id="qfb" aria-live="polite">' + answerFeedback(saved, it) + '</p>';
     }
     card.className = 'bb-question' + (settings.qMini ? ' mini' : '') + (it.example ? ' example' : '');
-    card.innerHTML = '<span class="qlabel">' + esc(label) + '</span><div class="qbody">' + body + '</div>' +
-      '<button type="button" class="bb-icon" id="q-toggle" aria-expanded="' + !settings.qMini + '" aria-label="' + (settings.qMini ? 'Show the question' : 'Hide the question') + '">' + ic(settings.qMini ? 'expand' : 'minus') + '</button>';
+    card.innerHTML = '<button type="button" class="q-grip" id="q-grip" aria-label="Move the question card: drag it, or use the arrow keys. Shift and arrows resize it. Double-click to put it back." title="Drag to move. Double-click to put it back.">' + ic('grip') + '</button>' +
+      '<span class="qlabel">' + esc(label) + '</span><div class="qbody">' + body + '</div>' +
+      '<button type="button" class="bb-icon" id="q-toggle" aria-expanded="' + !settings.qMini + '" aria-label="' + (settings.qMini ? 'Show the question' : 'Hide the question') + '">' + ic(settings.qMini ? 'expand' : 'minus') + '</button>' +
+      (settings.qMini ? '' : '<span class="q-size" id="q-size" aria-hidden="true" title="Drag to resize"></span>');
+    placeCard();
     $('q-count').textContent = act || questions.length > 1 ? 'Question ' + (qi + 1) + ' of ' + questions.length : questions.length ? 'Your question' : 'Free practice';
     $('q-prev').disabled = qi <= 0; $('q-next').disabled = qi >= questions.length - 1;
     $('q-prev').hidden = $('q-next').hidden = questions.length < 2;
@@ -1066,6 +1092,71 @@
       subtitle('Not yet. Look back at each step, or tap I need help.', 'tutor');
     }
   }
+  // The question card can sit anywhere on the board and be resized. Its place and size are
+  // remembered in this browser for every board (settings.qBox).
+  function placeCard() {
+    var card = $('question'), b = settings.qBox;
+    if (!b) { card.classList.remove('placed', 'sized'); card.style.left = card.style.top = card.style.width = card.style.height = ''; return; }
+    var w = b.w ? Math.max(220, Math.min(b.w, W - 16)) : null;
+    var h = b.h && !settings.qMini ? Math.max(60, Math.min(b.h, H - 16)) : null;
+    card.classList.add('placed');
+    card.classList.toggle('sized', !!(w || h));
+    card.style.width = w ? w + 'px' : '';
+    card.style.height = h ? h + 'px' : '';
+    var r = card.getBoundingClientRect();
+    card.style.left = Math.max(8, Math.min(b.x, W - Math.min(r.width, W - 16) - 8)) + 'px';
+    card.style.top = Math.max(8, Math.min(b.y, H - 48)) + 'px';
+  }
+  function cardBox() {
+    var card = $('question'), r = card.getBoundingClientRect(), sr = stage.getBoundingClientRect();
+    return { x: Math.round(r.left - sr.left), y: Math.round(r.top - sr.top), w: Math.round(r.width), h: Math.round(r.height) };
+  }
+  (function () {
+    var card = $('question'), mode = null, start = null, lastTap = 0;
+    function resetCard() {
+      delete settings.qBox; saveSettings(); placeCard();
+      subtitle('The question card is back in its place.', 'tutor');
+    }
+    card.addEventListener('pointerdown', function (e) {
+      var grip = e.target.closest('#q-grip, .qlabel'), size = e.target.closest('#q-size');
+      if (!grip && !size) return;
+      // two quick presses on the grip put the card back (dblclick is unreliable while dragging)
+      if (grip && Date.now() - lastTap < 400) { lastTap = 0; mode = null; resetCard(); e.preventDefault(); return; }
+      if (grip) lastTap = Date.now();
+      var b = cardBox();
+      mode = size ? 'size' : 'move';
+      start = { px: e.clientX, py: e.clientY, x: b.x, y: b.y, w: b.w, h: b.h, moved: false };
+      card.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    card.addEventListener('pointermove', function (e) {
+      if (!mode) return;
+      var dx = e.clientX - start.px, dy = e.clientY - start.py;
+      if (Math.abs(dx) + Math.abs(dy) > 3) start.moved = true;
+      if (!start.moved) return;
+      var b = settings.qBox || {};
+      if (mode === 'move') settings.qBox = { x: start.x + dx, y: start.y + dy, w: b.w || null, h: b.h || null };
+      else settings.qBox = { x: start.x, y: start.y, w: start.w + dx, h: settings.qMini ? null : start.h + dy };
+      placeCard();
+    });
+    function end() {
+      if (!mode) return;
+      var moved = start.moved; mode = null;
+      if (moved) { lastTap = 0; saveSettings(); stepsSoon(); }
+    }
+    card.addEventListener('pointerup', end);
+    card.addEventListener('pointercancel', end);
+    card.addEventListener('keydown', function (e) {
+      if (!e.target.closest('#q-grip')) return;
+      var d = { ArrowLeft: [-16, 0], ArrowRight: [16, 0], ArrowUp: [0, -16], ArrowDown: [0, 16] }[e.key];
+      if (!d) return;
+      e.preventDefault();
+      var b = cardBox(), q = settings.qBox || {};
+      settings.qBox = e.shiftKey ? { x: b.x, y: b.y, w: b.w + d[0], h: b.h + d[1] } : { x: b.x + d[0], y: b.y + d[1], w: q.w || null, h: q.h || null };
+      placeCard(); saveSettings();
+    });
+  })();
+
   function answerFeedback(saved, it) {
     if (!saved) return '';
     if (noHints) return 'Saved. You see how it went when you finish.';
@@ -1264,16 +1355,30 @@
     });
     return lines.filter(function (l) { return l.w >= 24 && l.h < 220; }).slice(0, 30);
   }
-  var stepTimer = null;
-  function stepsSoon() { clearTimeout(stepTimer); stepTimer = setTimeout(renderStepHandles, 220); }
+  var stepTimer = null, handleRects = [], tapHandle = null;
+  // The buttons never block the pen: a quick tap on one opens its menu, a stroke draws as usual.
+  function handleAt(x, y) {
+    if ($('steps-layer').hidden) return null;
+    for (var i = 0; i < handleRects.length; i++) { var h = handleRects[i]; if (x >= h.x - 2 && x <= h.x + 30 && y >= h.y - 2 && y <= h.y + 30) return h; }
+    return null;
+  }
+  // The line buttons wait for a pause in writing, so they never sit where the next stroke goes.
+  function stepsSoon() { clearTimeout(stepTimer); $('steps-layer').hidden = true; stepTimer = setTimeout(renderStepHandles, 1600); }
   function renderStepHandles() {
     var lay = $('steps-layer');
     lay.innerHTML = ''; lay.hidden = false;
     if (demo.on || replay.on || noHints || cur || tool === 'eraser' || tool === 'lasso') return;
+    // Buttons sit just before the start of each line (writing continues to the right). When the
+    // tool panel leaves no room there, they sit above the line's start instead.
+    var tr = $('tools').getBoundingClientRect(), sr = stage.getBoundingClientRect(), toolsRight = tr.right - sr.left + 6;
+    handleRects = [];
     workLines().forEach(function (l, i) {
       var b = document.createElement('button');
       b.type = 'button'; b.className = 'bb-step';
-      b.style.left = Math.min(W - 36, l.x + l.w + 8) + 'px'; b.style.top = Math.max(0, l.y + l.h / 2 - 14) + 'px';
+      var left = l.x - 34, top = l.y + l.h / 2 - 14;
+      if (left < toolsRight && l.y + l.h > tr.top - sr.top && l.y < tr.bottom - sr.top) { left = l.x - 6; top = l.y - 30; }
+      b.style.left = Math.max(4, left) + 'px'; b.style.top = Math.max(0, top) + 'px';
+      handleRects.push({ x: Math.max(4, left), y: Math.max(0, top), l: l, i: i });
       b.setAttribute('aria-label', 'Ask about line ' + (i + 1) + ' of your work'); b.title = 'Ask about this line';
       b.innerHTML = ic('more');
       b.addEventListener('click', function (e) { e.stopPropagation(); openStepMenu(l, i); });
@@ -1613,7 +1718,7 @@
   $('back').innerHTML = ic('back') + '<span>' + backLabel + '</span>';
   $('back').setAttribute('href', backHref);
   $('back').setAttribute('aria-label', act ? backLabel : 'Back to your courses');
-  window.addEventListener('resize', function () { resize(); stepsSoon(); if (sel) showSel(); if (focus.on) enterFocus(focus.rect, $('focus-line') ? $('focus-line').textContent : ''); });
+  window.addEventListener('resize', function () { resize(); placeCard(); stepsSoon(); if (sel) showSel(); if (focus.on) enterFocus(focus.rect, lastSub.text); });
   resize(); renderTools(); renderQuestion(); renderActions(); renderChat(); loadBoard(); markActivity();
   finishBtn.hidden = !act;
   setStatus('thinking', 'Getting ready');

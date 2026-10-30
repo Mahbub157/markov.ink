@@ -404,7 +404,7 @@
 
 /* ---------- tap a step, unsure, circle to ask, selection ---------- */
 .bb-steps { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
-.bb-step { position: absolute; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--hair-strong); background: var(--card); color: var(--soft); display: inline-flex; align-items: center; justify-content: center; pointer-events: auto; opacity: .55; box-shadow: var(--shadow); transition: opacity .15s; padding: 0; }
+.bb-step { position: absolute; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--hair-strong); background: var(--card); color: var(--soft); display: inline-flex; align-items: center; justify-content: center; pointer-events: none; opacity: .6; box-shadow: var(--shadow); transition: opacity .15s; padding: 0; }
 .bb-step:hover, .bb-step:focus-visible { opacity: 1; color: var(--tutor); border-color: var(--tutor); }
 .bb-step svg { width: 15px; height: 15px; }
 @media (hover: none) { .bb-step { opacity: .85; } }
@@ -477,3 +477,23 @@
 .bb .qvis:focus-visible { outline: 3px solid var(--blue-bright); outline-offset: 2px; }
 .qvis-miss { margin: 6px 4px 0; font-size: 13px; color: var(--demo); background: var(--demo-bg); border-radius: 8px; padding: 6px 10px; }
 @media (max-width: 640px) { .bb .qvis img { max-height: 24vh; } }
+
+/* ---------- question card you can move and resize ---------- */
+.bb-question .q-grip { flex: none; width: 24px; height: 36px; margin-left: -8px; border: 0; background: none; border-radius: 8px; color: var(--muted); cursor: grab; touch-action: none; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.bb-question .q-grip svg { width: 16px; height: 16px; fill: currentColor; stroke: none; }
+.bb-question .q-grip:hover { background: var(--paper-2); color: var(--ink); }
+.bb-question .q-grip:active { cursor: grabbing; }
+.bb-question .qlabel { cursor: grab; touch-action: none; user-select: none; }
+.bb-question.placed { transform: none; right: auto; max-width: calc(100% - 16px); z-index: 11; }
+.bb-question.sized { overflow: auto; }
+.bb-question.sized .qbody { flex: 1; }
+.bb-question.sized .qvis { width: 100%; }
+.bb-question.sized .qvis img { max-height: none; width: 100%; }
+.bb-question .q-size { position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; cursor: nwse-resize; touch-action: none;
+  background: linear-gradient(135deg, transparent 0 55%, var(--hair-strong) 55% 62%, transparent 62% 72%, var(--hair-strong) 72% 79%, transparent 79%); border-radius: 0 0 12px 0; }
+.bb-question.mini .q-size { display: none; }
+
+/* ---------- focus mode keeps the bottom row ---------- */
+.bb-sub.focus { border-color: var(--tutor); box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); }
+.bb-sub.focus .who { color: var(--tutor); }
+.bb-dock.focusing .bb-chip.dark { box-shadow: var(--shadow-lift); }

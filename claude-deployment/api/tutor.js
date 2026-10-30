@@ -4,6 +4,8 @@
 // used as a general-purpose Claude proxy. The API key stays in ANTHROPIC_API_KEY on the server.
 
 const { originAllowed, clientId, makeLimiter } = require('./_guard.js');
+const { apiKey, keyCheck } = require('./_key.js');
+const verifyLimited = makeLimiter(6, 10 * 60 * 1000);
 
 const MODEL = process.env.TUTOR_MODEL || 'claude-opus-5-5';               // help, checks, and questions
 const WATCH_MODEL = process.env.TUTOR_WATCH_MODEL || 'claude-sonnet-5-5'; // quiet looks while the student writes
@@ -143,10 +145,24 @@ function tidy(out) {
 }
 
 async function handler(req, res) {
-  const configured = Boolean(process.env.ANTHROPIC_API_KEY);
+  const configured = Boolean(apiKey());
   // The board checks "live". (The older whiteboard looks for "configured", which is no longer
   // sent, so it keeps using its own paste-a-key mode and never calls this endpoint.)
-  if (req.method === 'GET') return send(res, 200, { ok: true, live: configured });
+  if (req.method === 'GET') {
+    const out = { ok: true, live: configured, key: keyCheck() };
+    // ?verify=1 asks Anthropic whether it accepts the key, by listing models (no cost).
+    if (configured && /[?&]verify=1/.test(req.url || '') && !verifyLimited(clientId(req))) {
+      try {
+        const { default: Anthropic } = await import('@anthropic-ai/sdk');
+        await new Anthropic({ apiKey: apiKey() }).models.list({ limit: 1 });
+        out.keyAccepted = true;
+      } catch (err) {
+        out.keyAccepted = false;
+        out.keyError = err && err.status ? 'http_' + err.status : 'unreachable';
+      }
+    }
+    return send(res, 200, out);
+  }
   if (req.method !== 'POST') { res.setHeader('Allow', 'GET, POST'); return send(res, 405, { error: 'method' }); }
   if (!configured) return send(res, 503, { error: 'not_configured' });
   if (!originAllowed(req.headers.origin)) return send(res, 403, { error: 'origin' });
@@ -163,7 +179,7 @@ async function handler(req, res) {
   if (r.kind === 'watch' && !r.image) return send(res, 200, { ok: true, reply: quiet('') });
 
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
-  const anthropic = new Anthropic();
+  const anthropic = new Anthropic({ apiKey: apiKey() });
   const watch = r.kind === 'watch';
   let response;
   try {
@@ -178,7 +194,7 @@ async function handler(req, res) {
     });
   } catch (err) {
     if (err instanceof Anthropic.RateLimitError) return send(res, 429, { error: 'busy' });
-    if (err instanceof Anthropic.AuthenticationError) return send(res, 503, { error: 'not_configured' });
+    if (err instanceof Anthropic.AuthenticationError) return send(res, 503, { error: 'key_rejected' });
     if (err instanceof Anthropic.BadRequestError) return send(res, 400, { error: 'rejected' });
     if (err instanceof Anthropic.APIError) return send(res, 502, { error: 'upstream', status: err.status });
     return send(res, 502, { error: 'unreachable' });

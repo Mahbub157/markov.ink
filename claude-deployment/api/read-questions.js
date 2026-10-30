@@ -155,7 +155,7 @@ async function handler(req, res) {
     });
   } catch (err) {
     if (err instanceof Anthropic.RateLimitError) return send(res, 429, { error: 'busy' });
-    if (err instanceof Anthropic.BadRequestError) return send(res, 400, { error: 'rejected' });
+    if (err instanceof Anthropic.BadRequestError) { console.error('reader rejected:', err.message); return send(res, 400, { error: 'rejected', detail: String(err.message || '').slice(0, 300) }); }
     if (err instanceof Anthropic.AuthenticationError) return send(res, 503, { error: 'key_rejected' });
     if (err instanceof Anthropic.APIError) return send(res, 502, { error: 'upstream', status: err.status });
     return send(res, 502, { error: 'unreachable' });

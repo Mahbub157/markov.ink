@@ -377,6 +377,7 @@
       draftHw = existing
         ? { forId: editId, title: existing.title, source: existing.source, text: existing.questions.map(function (q) { return q.text; }).join('\n'), file: existing.file, demo: existing.demo, questions: JSON.parse(JSON.stringify(existing.questions)), method: existing.source === 'file' || existing.source === 'file-read' ? 'file' : 'paste', read: existing.source === 'file-read' ? { done: true, method: existing.readMethod || 'ocr', confidence: 100, questions: existing.questions.length } : null }
         : { forId: null, title: '', source: 'paste', text: '', file: null, demo: false, questions: null, method: 'paste' };
+      if (existing && draftHw.questions) draftHw.questions.forEach(function (q) { q.visual = L.visual(courseId, existing.id, q.id); });
     }
     var d = draftHw;
     var html = crumbs(base().concat([['Homework', h('/homework')], [existing ? 'Edit classwork' : 'Bring classwork']])) +
@@ -471,8 +472,12 @@
         (r.method === 'pdf-text' ? '<strong>Read from the PDF text.</strong> ' : '<strong>Read with text recognition.</strong> ');
       body = found + (r.method === 'ocr' ? 'Check each one against your sheet and fix anything misread.' : 'Check that each question is complete.');
     }
+    var checks = r.warnings || [];
+    if (checks.length) warn = true;
     return '<div class="note' + (warn ? ' warn' : '') + '" style="margin-top:12px">' + U.icon('check') + '<p>' + head + body +
-      (r.truncated ? ' Only the first 5 pages were read.' : '') + '</p></div>';
+      (r.pictures ? ' Kept ' + (r.pictures === 1 ? 'a picture' : r.pictures + ' pictures') + ' from the file for the questions that need ' + (r.pictures === 1 ? 'it' : 'them') + '.' : '') +
+      (r.truncated ? ' Only the first 5 pages were read.' : '') + '</p>' +
+      (checks.length ? '<p style="margin-top:6px"><strong>Check before you start:</strong></p><ul class="read-checks">' + checks.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('') + '</ul>' : '') + '</div>';
   }
 
   function readFile(f) {
@@ -498,8 +503,9 @@
       if (res.title && (!d.title || d.title === (f.name || 'Photo').replace(/\.[a-z0-9]+$/i, '').slice(0, 80))) { d.title = res.title.slice(0, 80); document.getElementById('hw-title').value = d.title; }
       d.read = { done: true, method: res.method, confidence: Math.round(res.confidence || 100), questions: res.questions.length, truncated: !!res.truncated,
         fallback: res.fallback || null, directions: res.directions || '', unclear: res.unclear || 0, figures: res.figures || 0,
-        ignored: (res.ignored || []).map(function (i) { return i.kind; }) };
-      setQuestions(res.questions);
+        ignored: (res.ignored || []).map(function (i) { return i.kind; }),
+        warnings: res.warnings || [], pictures: (res.visuals || []).filter(Boolean).length };
+      setQuestions(res.questions, res.visuals);
       renderMethod();
       if (!res.questions.length) {
         showErr(res.method === 'claude' && res.message ? res.message
@@ -523,14 +529,18 @@
     return g;
   }
 
-  function setQuestions(texts) {
+  function setQuestions(texts, visuals) {
     var d = draftHw;
     var prev = {};
-    (d.questions || []).forEach(function (q) { prev[q.text] = q; });
+    // reuse earlier cards with the same text, each one only once, so two identical
+    // questions still get two separate cards (and two separate whiteboards)
+    (d.questions || []).forEach(function (q) { (prev[q.text] = prev[q.text] || []).push(q); });
     d.questions = texts.map(function (t, i) {
-      if (prev[t]) return prev[t];
+      var reuse = prev[t] && prev[t].shift();
+      var v = visuals && visuals[i] || null;
+      if (reuse) { if (visuals) reuse.visual = v; return reuse; }
       var g = suggestFor(t);
-      return { id: 'q' + (i + 1) + '-' + Math.random().toString(36).slice(2, 6), text: t, topicId: g && g.confident ? g.id : null, suggested: g ? g.id : null };
+      return { id: 'q' + (i + 1) + '-' + Math.random().toString(36).slice(2, 6), text: t, topicId: g && g.confident ? g.id : null, suggested: g ? g.id : null, visual: v };
     });
     renderQuestions();
   }
@@ -559,6 +569,8 @@
           '<select class="select qcard-topic" id="qt-' + i + '" data-i="' + i + '"' + (outline ? '' : ' disabled') + '>' + topicOptions(q.topicId) + '</select>' +
           '<button type="button" class="qcard-remove" data-remove="' + i + '" aria-label="Remove question ' + (i + 1) + '">' + U.icon('close') + '</button></div>' +
           '<textarea class="qtext" id="qtext-' + i + '" data-text="' + i + '" rows="' + lines + '" spellcheck="false">' + esc(q.text) + '</textarea>' +
+          (q.visual ? '<figure class="qcard-vis"><img src="' + q.visual + '" alt="Picture from your file for question ' + (i + 1) + '"><figcaption>Picture kept from your file. It shows on the whiteboard with this question.' +
+            ' <button type="button" class="btn-link" data-unvis="' + i + '">Remove picture</button></figcaption></figure>' : '') +
           (q.suggested && !q.topicId && outline ? '<div class="sugg">Maybe: ' + esc(topicTitle(q.suggested)) + '</div>' : (q.suggested && q.topicId === q.suggested ? '<div class="sugg">Suggested topic</div>' : '')) +
           '</li>';
       }).join('') + '</ol>' +
@@ -575,6 +587,9 @@
         q.text = t.value.trim();
         if (!q.topicId) { var g = suggestFor(q.text); q.suggested = g ? g.id : null; }
       });
+    });
+    area.querySelectorAll('[data-unvis]').forEach(function (b) {
+      b.addEventListener('click', function () { d.questions[+b.getAttribute('data-unvis')].visual = null; renderQuestions(); });
     });
     area.querySelectorAll('[data-remove]').forEach(function (b) {
       b.addEventListener('click', function () {
@@ -603,7 +618,11 @@
     var hasQ = d.questions && d.questions.length;
     if (!hasQ && !d.file) { showErr('Add at least one question, or choose a photo or PDF.', null); return; }
     var source = d.demo ? 'demo' : (d.file && d.read && d.read.done ? 'file-read' : (hasQ ? 'paste' : 'file'));
-    var saved = L.saveHomework(courseId, { id: d.forId, title: d.title, source: source, file: d.file, demo: d.demo, readMethod: d.read && d.read.method, questions: hasQ ? d.questions : [] });
+    var withPic = hasQ ? d.questions.filter(function (q) { return q.visual; }) : [];
+    var saved = L.saveHomework(courseId, { id: d.forId, title: d.title, source: source, file: d.file, demo: d.demo, readMethod: d.read && d.read.method, questions: hasQ ? d.questions : [],
+      visualIds: withPic.map(function (q) { return q.id; }) });
+    var pics = {}; withPic.forEach(function (q) { pics[q.id] = q.visual; });
+    L.saveVisuals(courseId, saved.id, pics);   // any picture that did not fit is reported on the brief
     L.prepareActivity(courseId, { id: 'hw:' + saved.id, type: 'homework', kind: 'guided', homeworkId: saved.id, title: saved.title });
     L.setResume(courseId, '/homework/h/' + saved.id, saved.title, 'ready');
     draftHw = null;
@@ -617,13 +636,17 @@
     var body = String(q.text).split('\n').map(function (line) {
       return /^\([a-hiv]{1,3}\)/.test(line) ? '<span class="qline part">' + esc(line) + '</span>' : '<span class="qline">' + esc(line) + '</span>';
     }).join('');
+    var pic = boardHwId ? L.visual(courseId, boardHwId, q.id) : null;
+    var lost = !pic && boardVisualIds.indexOf(q.id) >= 0;
+    body += pic ? '<img class="qbox-vis" src="' + pic + '" alt="Picture from your file for question ' + (i + 1) + '">' : '';
+    body += lost ? '<span class="qbox-lost">The picture for this question could not be saved in this browser. Use your sheet for it.</span>' : '';
     return '<li class="qbox"><span class="qnum" aria-hidden="true">' + (i + 1) + '</span><div class="qbody"><div class="qtext-view">' + body + '</div>' +
       '<div class="qmeta">' + (q.topicId ? '<a class="tag" href="' + h('/topic/' + q.topicId) + '">' + dot(L.topicEvidence(courseId, q.topicId).state) + esc(topicTitle(q.topicId)) + '</a>' : '<span class="tag">Not sure yet</span>') +
       (boardHwId ? '<a class="tag tag-board" href="' + boardHref(boardHwId, i) + '">' + U.icon('board') + 'Work on the board</a>' : '') + '</div></div></li>';
   }
 
   // The whiteboard opens on one question of a saved classwork.
-  var boardHwId = null;
+  var boardHwId = null, boardVisualIds = [];
   function boardHref(hwId, index) { return actHref('hw:' + hwId, index); }
   // Every activity runs on the whiteboard; it finds its questions from the activity id.
   function actHref(actId, index) {
@@ -643,9 +666,9 @@
     var main = '<section><h2>Source</h2><p style="margin:0;color:var(--ink-2)">' + src + '</p>' +
       (Object.keys(topics).length ? '<div class="prereqs" style="margin-top:12px">' + Object.keys(topics).map(function (t) { return '<a class="prereq" href="' + h('/topic/' + t) + '">' + esc(topicTitle(t)) + ' <span style="color:var(--muted);font-weight:500">' + topics[t] + '</span></a>'; }).join('') + '</div>' : '') + '</section>';
     if (w.questions.length) {
-      boardHwId = id;
+      boardHwId = id; boardVisualIds = w.visualIds || [];
       main += '<section><h2>' + w.questions.length + ' question' + (w.questions.length === 1 ? '' : 's') + '</h2><ol class="qboxes">' + w.questions.map(questionBox).join('') + '</ol></section>';
-      boardHwId = null;
+      boardHwId = null; boardVisualIds = [];
     } else {
       main += '<section><h2>Questions</h2><p style="margin:0;color:var(--soft)">No questions yet. Edit this classwork to add them, so the tutor knows what you are working on.</p></section>';
     }

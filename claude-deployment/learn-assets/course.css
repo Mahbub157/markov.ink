@@ -407,3 +407,12 @@
   .pstep { flex-wrap: wrap; }
   .pstep .btn { width: 100%; }
 }
+
+/* pictures kept from a homework file */
+.qcard-vis { margin: 10px 0 0; }
+.qcard-vis img { display: block; max-width: 100%; max-height: 260px; border: 1px solid var(--hair); border-radius: 10px; background: #fff; }
+.qcard-vis figcaption { margin-top: 6px; font-size: 13px; color: var(--soft); }
+.btn-link { border: 0; background: none; padding: 0; color: var(--royal); font-weight: 600; text-decoration: underline; cursor: pointer; }
+.qbox-vis { display: block; max-width: 100%; max-height: 220px; margin-top: 6px; border: 1px solid var(--hair); border-radius: 10px; background: #fff; }
+.qbox-lost { display: block; margin-top: 6px; font-family: Inter, system-ui, sans-serif; font-size: 13px; color: var(--demo); }
+.read-checks { margin: 4px 0 0; padding-left: 20px; font-size: 14px; }

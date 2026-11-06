@@ -5,7 +5,7 @@
     { "source": "/claude-deployment/:page(onboarding|learn|course|whiteboard-v2).html", "destination": "/:page", "permanent": true }
   ],
   "rewrites": [
-    { "source": "/:page(onboarding|learn|course|whiteboard-v2)", "destination": "/claude-deployment/:page.html" },
+    { "source": "/:page(onboarding|learn|course|whiteboard-v2)", "destination": "/claude-deployment/:page" },
     { "source": "/learn-assets/:path*", "destination": "/claude-deployment/learn-assets/:path*" }
   ],
   "headers": [
